@@ -57,7 +57,7 @@ Below are all the secrets you need to set. They are invisible to anyone includin
 | :--- | :---: | :---  | :---  | :--- |
 | ZOTERO_ID | ✅ | str  | User ID of your Zotero account. Get your ID from [here](https://www.zotero.org/settings/security). | 12345678  |
 | ZOTERO_KEY | ✅ | str  | An Zotero API key with read access. Get a key from [here](https://www.zotero.org/settings/security).  | AB5tZ877P2j7Sm2Mragq041H   |
-| ARXIV_QUERY | ✅ | str  | The search query for retrieving arxiv papers. Refer to the [official document](https://info.arxiv.org/help/api/user-manual.html#query_details) for details. The example queries papers about AI, CV, NLP, ML. Find the abbr of your research area from [here](https://arxiv.org/category_taxonomy).  | cat:cs.AI OR cat:cs.CV OR cat:cs.LG OR cat:cs.CL |
+| ARXIV_QUERY | ✅ | str  | The categories of target arxiv papers. Use `+` to concatenate multiple categories. The example retrieves papers about AI, CV, NLP, ML. Find the abbr of your research area from [here](https://arxiv.org/category_taxonomy).  | cs.AI+cs.CV+cs.LG+cs.CL |
 | SMTP_SERVER | ✅ | str | The SMTP server that sends the email. I recommend to utilize a seldom-used email for this. Ask your email provider (Gmail, QQ, Outlook, ...) for its SMTP server| smtp.qq.com |
 | SMTP_PORT | ✅ | int | The port of SMTP server. | 465 |
 | SENDER | ✅ | str | The email account of the SMTP server that sends you email. | abc@qq.com |
