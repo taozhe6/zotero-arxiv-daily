@@ -17,7 +17,7 @@ from typing import List, Optional, Set
 from loguru import logger
 
 _UA_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (GitHub Actions; +https://github.com/LeeHITsz/zotero-arxiv-daily)"
+    "User-Agent": "Mozilla/5.0 (GitHub Actions; +https://github.com/DuckLeeyk/zotero-genetics-daily)"
 }
 
 
