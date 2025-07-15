@@ -1,3 +1,36 @@
+## DuckLeeyk/zotero-arxiv-daily · genetics branch
+
+### Overview
+The `genetics` branch extends the original [TideDra/zotero-arxiv-daily](https://github.com/TideDra/zotero-arxiv-daily) framework to **recommend new bioRxiv and medRxiv preprints in genetics on a daily basis**, tailored to your Zotero library.  
+- Uses the official bioRxiv and medRxiv APIs.  
+- Focus areas on bioRxiv: Genetics, Genomics, Bioinformatics.  
+- Focus areas on medRxiv: Genetic and Genomic Medicine.  
+- **New**: “Pinned” delivery of papers authored by your favourite authors.
+
+### New Features
+1. **Favourite‐author pinning**  
+   - Define a `FAVORITE_AUTHORS` list (semicolon‐separated).  
+   - Any preprint authored by someone in this list will be **pinned to the top** of your daily email and marked with the 🧑🏻‍🔬 emoji.  
+2. **Preconfigured categories**  
+   - Removed the old `ARXIV_QUERY` secret.  
+   - In `paper.py`, target categories/endpoints are now hard-coded for bioRxiv & medRxiv genetics fields.  
+3. **Email template improvements**  
+   - Display all authors for each paper.  
+   - Replace “PDF” button with an **“Open Web”** button that opens the paper’s bioRxiv/medRxiv page.
+
+### Usage
+This branch reuses the original workflow with minimal changes:
+1. Remove the old `ARXIV_QUERY` secret.  
+2. (Optionally) Add a new secret:  
+   ```text
+   FAVORITE_AUTHORS="Yamanaka S;Li Y.;Smith J R"
+   ```  
+   – Use a semicolon‐separated list of author names.  
+3. Ensure your other GitHub Secrets (`ZOTERO_ID`, `ZOTERO_KEY`, `SMTP_SERVER`, `SMTP_PORT`, `SENDER`, `SENDER_PASSWORD`, `RECEIVER`) remain configured.  
+4. The GitHub Actions workflow will now run **every day at 9:30 AM Beijing Time** and send you a neatly formatted email.
+
+---
+
 <p align="center">
   <a href="" rel="noopener">
  <img width=200px height=200px src="assets/logo.svg" alt="logo"></a>
