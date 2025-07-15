@@ -18,7 +18,7 @@ The `genetics` branch extends the original [TideDra/zotero-arxiv-daily](https://
    - Display all authors for each paper.  
    - Replace “PDF” button with an **“Open Web”** button that opens the paper’s bioRxiv/medRxiv page.
 
-![screenshot](./assets/example.png)
+![screenshot](./assets/example_email.png)
 
 ### Usage
 This branch reuses the original workflow with minimal changes:
