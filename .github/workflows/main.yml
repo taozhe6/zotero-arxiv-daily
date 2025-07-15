@@ -3,8 +3,8 @@ name: Send emails daily
 on:
   workflow_dispatch:
   schedule:
-    # 02:00 UTC → 10:00 CST/Beijing
-    - cron: '0 2 * * *'
+    # 01:30 UTC → 09:30 CST/Beijing
+    - cron: '30 1 * * *'
 
 jobs:
   calculate-and-send:
