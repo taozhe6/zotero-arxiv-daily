@@ -44,7 +44,9 @@ class PreprintPaper:
 
     score: float = 0.0
     code_url: Optional[str] = None
+
     affiliations: Optional[List[str]] = field(default=None, repr=False)
+
     is_favorite: bool = field(default=False, repr=False, compare=False)
 
     @property
@@ -130,6 +132,13 @@ def fetch_today_papers(
             if doi in seen:
                 continue
             seen.add(doi)
+
+            # Extract the corresponding institution field into a list
+            corr_inst = item.get("author_corresponding_institution", "").strip()
+            if not corr_inst:
+                corr_inst = "Unknown Affiliation"
+            affiliations = [corr_inst]
+
             papers.append(
                 PreprintPaper(
                     title=item["title"],
@@ -140,10 +149,11 @@ def fetch_today_papers(
                     category=item["category"],
                     server=server,
                     abstract=item["abstract"],
+                    affiliations=affiliations,   # <-- new
                 )
             )
 
-        logger.debug(f"{server}: {len(col)} items fetched ({cat}).")  # ← UPDATED LINE
+        logger.debug(f"{server}: {len(col)} items fetched ({cat}).")
 
     logger.success(f"{len(papers)} unique preprints collected.")
     return papers
@@ -151,4 +161,5 @@ def fetch_today_papers(
 
 if __name__ == "__main__":
     for p in fetch_today_papers()[:5]:
-        print(f"[{p.server}] {p.date}  {p.title}  ({p.category})")
+        aff = p.affiliations[0] if p.affiliations else "Unknown Affiliation"
+        print(f"[{p.server}] {p.date}  {p.title}  — Affiliation: {aff}")
