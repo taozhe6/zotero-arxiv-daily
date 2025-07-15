@@ -23,6 +23,7 @@ from recommender import rerank_paper
 from construct_email import render_email, send_email
 from tqdm import tqdm
 
+from fav_utils import mark_paper
 from paper import PreprintPaper, fetch_today_papers
 from llm import set_global_llm
 
@@ -76,13 +77,9 @@ def mark_and_sort(papers: List[PreprintPaper], fav_authors: Set[str]) -> List[Pr
     Secondary key remains the relevance score (descending).
     """
     for p in papers:
-        p.is_favorite = any(
-            fav in author.lower()
-            for fav in fav_authors
-            for author in p.authors
-        )
-
-    papers.sort(key=lambda p: (not p.is_favorite, -p.score))
+        mark_paper(p)
+        
+    papers.sort(key=lambda x: (not x.is_favorite, -x.score))
     return papers
 
 
