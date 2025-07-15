@@ -1,7 +1,7 @@
-## DuckLeeyk/zotero-genetics-daily · genetics branch
+<img width="1256" height="794" alt="image" src="https://github.com/user-attachments/assets/27034842-f424-47bc-98c0-b257bb8073a7" />## DuckLeeyk/zotero-genetics-daily · genetics branch
 
 ### Overview
-The `genetics` branch extends the original [TideDra/zotero-arxiv-daily](https://github.com/TideDra/zotero-arxiv-daily) framework to **recommend new bioRxiv and medRxiv preprints in genetics on a daily basis**, tailored to your Zotero library.  
+The `genetics` branch extends the original [TideDra/zotero-arxiv-daily](https://github.com/TideDra/zotero-arxiv-daily) framework to **recommend new bioRxiv and medRxiv preprints in genetics on a daily basis**, tailored to your Zotero library and your favourite authors.  
 - Uses the official bioRxiv and medRxiv APIs.  
 - Focus areas on bioRxiv: Genetics, Genomics, Bioinformatics.  
 - Focus areas on medRxiv: Genetic and Genomic Medicine.  
@@ -17,6 +17,8 @@ The `genetics` branch extends the original [TideDra/zotero-arxiv-daily](https://
 3. **Email template improvements**  
    - Display all authors for each paper.  
    - Replace “PDF” button with an **“Open Web”** button that opens the paper’s bioRxiv/medRxiv page.
+
+![screenshot](./assets/example.png)
 
 ### Usage
 This branch reuses the original workflow with minimal changes:
