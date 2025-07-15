@@ -1,7 +1,7 @@
 # ----------------------------------------------------------------------
 # Build a nicely formatted HTML e-mail for the daily preprint digest and
 # send it via SMTP.  Favorite-author papers are highlighted and placed
-# at the top of the list (sorting happens in main.py).
+# at the top of the list (sorting happens here now).
 # ----------------------------------------------------------------------
 from __future__ import annotations
 
@@ -25,14 +25,11 @@ def _load_fav_set() -> Set[str]:
     raw = os.getenv("FAVORITE_AUTHORS", "")
     return {x.strip().lower() for x in raw.split(";") if x.strip()}
 
-
 _FAV_SET = _load_fav_set()
-
 
 def _normalize(txt: str) -> str:
     """Remove non-alphanumerics and lower-case → for fuzzy containment."""
     return re.sub(r"\W+", "", txt).lower()
-
 
 def _is_favourite(author: str) -> bool:
     """Return True if `author` matches any item in _FAV_SET (fuzzy)."""
@@ -185,11 +182,14 @@ def _paper_block(p: PreprintPaper) -> str:
 
 # --------------------------- renderer ------------------------------- #
 def render_email(papers: Sequence[PreprintPaper]) -> str:
-    """Return the full HTML e-mail."""
-    if not papers:
+    """Return the full HTML e-mail, with favourites pinned to the top."""
+
+    sorted_papers = sorted(papers, key=lambda p: getattr(p, "is_favorite", False), reverse=True)
+
+    if not sorted_papers:
         return framework.replace("__CONTENT__", _empty_html())
 
-    blocks = [_paper_block(p) for p in tqdm(papers, desc="Rendering e-mail")]
+    blocks = [_paper_block(p) for p in tqdm(sorted_papers, desc="Rendering e-mail")]
     content = "<br>" + "</br><br>".join(blocks) + "</br>"
     return framework.replace("__CONTENT__", content)
 
@@ -213,14 +213,14 @@ def send_email(
     msg["From"] = _fmt(f"Daily Preprint Bot <{sender}>")
     msg["To"] = _fmt(f"Reader <{receiver}>")
     today = datetime.datetime.now().strftime("%Y/%m/%d")
-    msg["Subject"] = Header(f"Daily Preprint Digest — {today}", "utf-8").encode()
+    msg["Subject"] = Header(f"Daily Preprint Digest -- {today}", "utf-8").encode()
 
     # Try STARTTLS first; fall back to SSL if not supported.
     try:
         server = smtplib.SMTP(smtp_server, smtp_port)
         server.starttls()
     except Exception as e:
-        logger.warning(f"STARTTLS failed: {e} — falling back to SSL")
+        logger.warning(f"STARTTLS failed: {e} -- falling back to SSL")
         server = smtplib.SMTP_SSL(smtp_server, smtp_port)
 
     server.login(sender, password)
