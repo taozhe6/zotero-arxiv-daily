@@ -1,7 +1,7 @@
 [project]
 name = "zotero-genetics-daily"
 version = "0.3.5"
-description = "Zotero Genetics Daily: Fetch the latest genetics and genomics preprints from bioRxiv & medRxiv, generate a daily RSS feed, and automatically send new items to your email inbox."
+description = "Fetch the latest genetics and genomics preprints from bioRxiv & medRxiv, generate a daily RSS feed, and automatically send new items to your email inbox."
 readme = "README.md"
 requires-python = ">=3.11"
 
