@@ -1,19 +1,63 @@
-import numpy as np
-from sentence_transformers import SentenceTransformer
-from paper import ArxivPaper
-from datetime import datetime
+# ----------------------------------------------------------------------
+# Re-rank yesterday’s preprints according to similarity with the
+# user’s Zotero library (fresh items in Zotero are weighted higher).
+# ----------------------------------------------------------------------
+from __future__ import annotations
 
-def rerank_paper(candidate:list[ArxivPaper],corpus:list[dict],model:str='avsolatorio/GIST-small-Embedding-v0') -> list[ArxivPaper]:
+from datetime import datetime
+from typing import List
+
+import numpy as np
+from sentence_transformers import SentenceTransformer, util
+
+from paper import PreprintPaper  # unified data model
+
+
+def rerank_paper(
+    candidate: List[PreprintPaper],
+    corpus: List[dict],
+    model: str = "avsolatorio/GIST-small-Embedding-v0",
+) -> List[PreprintPaper]:
+    """
+    Return `candidate` sorted in descending relevance to the Zotero corpus.
+
+    Scoring strategy
+    ----------------
+    1. Encode abstracts of both preprints and Zotero items with a
+       SentenceTransformer model.
+    2. Compute cosine similarity matrix.
+    3. Apply logarithmic time-decay weights to Zotero items
+       (newer items contribute more).
+    4. Aggregate to a single score per preprint and save it to `.score`.
+    """
     encoder = SentenceTransformer(model)
-    #sort corpus by date, from newest to oldest
-    corpus = sorted(corpus,key=lambda x: datetime.strptime(x['data']['dateAdded'], '%Y-%m-%dT%H:%M:%SZ'),reverse=True)
-    time_decay_weight = 1 / (1 + np.log10(np.arange(len(corpus)) + 1))
-    time_decay_weight = time_decay_weight / time_decay_weight.sum()
-    corpus_feature = encoder.encode([paper['data']['abstractNote'] for paper in corpus])
-    candidate_feature = encoder.encode([paper.summary for paper in candidate])
-    sim = encoder.similarity(candidate_feature,corpus_feature) # [n_candidate, n_corpus]
-    scores = (sim * time_decay_weight).sum(axis=1) * 10 # [n_candidate]
-    for s,c in zip(scores,candidate):
-        c.score = s.item()
-    candidate = sorted(candidate,key=lambda x: x.score,reverse=True)
-    return candidate
+
+    # ---------- build time-decay weights for Zotero items ----------
+    corpus_sorted = sorted(
+        corpus,
+        key=lambda x: datetime.strptime(x["data"]["dateAdded"], "%Y-%m-%dT%H:%M:%SZ"),
+        reverse=True,
+    )
+    decay = 1 / (1 + np.log10(np.arange(len(corpus_sorted)) + 1))
+    decay /= decay.sum()  # normalize to 1
+
+    # ---------- encode text ----------
+    corpus_emb = encoder.encode(
+        [item["data"]["abstractNote"] for item in corpus_sorted],
+        convert_to_tensor=True,
+        normalize_embeddings=True,
+    )
+    cand_emb = encoder.encode(
+        [p.summary for p in candidate],
+        convert_to_tensor=True,
+        normalize_embeddings=True,
+    )
+
+    # ---------- similarity & aggregation ----------
+    sim_mat = util.cos_sim(cand_emb, corpus_emb)  # shape (n_cand, n_corpus)
+    scores = (sim_mat.cpu().numpy() * decay).sum(axis=1) * 10  # scale to ~0-10
+
+    for s, p in zip(scores, candidate):
+        p.score = float(s)
+
+    return sorted(candidate, key=lambda x: x.score, reverse=True)

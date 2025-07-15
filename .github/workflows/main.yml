@@ -1,41 +1,56 @@
 name: Send emails daily
+
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 22 * * *'
+    # 01:30 UTC → 09:30 CST/Beijing
+    - cron: '30 1 * * *'
 
 jobs:
   calculate-and-send:
     runs-on: ubuntu-latest
+
     steps:
+      # ---------------- checkout repo ---------------- #
       - name: Checkout
         uses: actions/checkout@v4
         with:
           repository: ${{ vars.REPOSITORY }}
-          ref: ${{ vars.REF }}
+          ref:        ${{ vars.REF }}
 
+      # ---------------- install uv ------------------- #
       - name: Setup uv
         uses: astral-sh/setup-uv@v3
         with:
           version: '0.5.4'
 
+      # ---------------- run script ------------------- #
       - name: Run script
         env:
-          ZOTERO_ID: ${{ secrets.ZOTERO_ID }}
-          ZOTERO_KEY: ${{ secrets.ZOTERO_KEY }}
-          ZOTERO_IGNORE: ${{ vars.ZOTERO_IGNORE }}
-          SEND_EMPTY: ${{ vars.SEND_EMPTY }}
-          ARXIV_QUERY: ${{ secrets.ARXIV_QUERY }}
-          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SENDER: ${{ secrets.SENDER }}
-          RECEIVER: ${{ secrets.RECEIVER }}
+          # -------- Zotero --------
+          ZOTERO_ID:      ${{ secrets.ZOTERO_ID }}
+          ZOTERO_KEY:     ${{ secrets.ZOTERO_KEY }}
+          ZOTERO_IGNORE:  ${{ vars.ZOTERO_IGNORE }}
+
+          # -------- delivery behaviour --------
+          SEND_EMPTY:     ${{ vars.SEND_EMPTY }}
+          MAX_PAPER_NUM:  ${{ vars.MAX_PAPER_NUM }}
+
+          # -------- e-mail --------
+          SMTP_SERVER:     ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT:       ${{ secrets.SMTP_PORT }}
+          SENDER:          ${{ secrets.SENDER }}
+          RECEIVER:        ${{ secrets.RECEIVER }}
           SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
-          MAX_PAPER_NUM: ${{ secrets.MAX_PAPER_NUM }}
-          USE_LLM_API: ${{ secrets.USE_LLM_API }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+          # -------- LLM --------
+          USE_LLM_API:     ${{ secrets.USE_LLM_API }}
+          OPENAI_API_KEY:  ${{ secrets.OPENAI_API_KEY }}
           OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
-          MODEL_NAME: ${{ secrets.MODEL_NAME }}
-          LANGUAGE: ${{ vars.LANGUAGE }}
+          MODEL_NAME:      ${{ secrets.MODEL_NAME }}
+          LANGUAGE:        ${{ vars.LANGUAGE }}
+
+          # -------- favorite authors --------
+          FAVORITE_AUTHORS: ${{ secrets.FAVORITE_AUTHORS }}
         run: |
           uv run main.py
