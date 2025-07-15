@@ -1,3 +1,5 @@
+## Zotero Genetics Daily
+
 ### Overview
 The `genetics` branch extends the original [TideDra/zotero-arxiv-daily](https://github.com/TideDra/zotero-arxiv-daily) framework to **recommend new bioRxiv and medRxiv preprints in genetics on a daily basis**, tailored to your Zotero library and your favourite authors.  
 - Uses the official bioRxiv and medRxiv APIs.  
