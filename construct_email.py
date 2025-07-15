@@ -1,41 +1,24 @@
 # ----------------------------------------------------------------------
 # Build a nicely formatted HTML e-mail for the daily preprint digest and
-# send it via SMTP.  Favorite-author papers are highlighted and placed
-# at the top of the list (sorting happens here now).
+# send it via SMTP.  Favourite-author papers are highlighted and placed
+# at the top of the list (sorting happens in main.py).
 # ----------------------------------------------------------------------
 from __future__ import annotations
 
 import datetime
 import math
 import os
-import re
 import smtplib
 from email.header import Header
 from email.mime.text import MIMEText
 from email.utils import formataddr, parseaddr
-from typing import Sequence, Set
+from typing import Sequence
 
 from loguru import logger
 from tqdm import tqdm
 
-from paper import PreprintPaper  # unified preprint model
-
-# ------------------------- favourite authors ------------------------- #
-def _load_fav_set() -> Set[str]:
-    raw = os.getenv("FAVORITE_AUTHORS", "")
-    return {x.strip().lower() for x in raw.split(";") if x.strip()}
-
-_FAV_SET = _load_fav_set()
-
-def _normalize(txt: str) -> str:
-    """Remove non-alphanumerics and lower-case → for fuzzy containment."""
-    return re.sub(r"\W+", "", txt).lower()
-
-def _is_favourite(author: str) -> bool:
-    """Return True if `author` matches any item in _FAV_SET (fuzzy)."""
-    norm_author = _normalize(author)
-    return any(fav in norm_author for fav in map(_normalize, _FAV_SET))
-
+from paper import PreprintPaper            # unified preprint model
+from fav_utils import is_fav_author        # <-- unified check
 
 # ------------------------------ HTML -------------------------------- #
 framework = """
@@ -64,7 +47,7 @@ framework = """
       vertical-align: middle;
     }}
     .fav-author {{
-      color: #d9534f;  /* orange-red */
+      color: #d9534f;      /* orange-red */
       font-weight: 700;
     }}
   </style>
@@ -84,7 +67,7 @@ To unsubscribe, disable this workflow in your GitHub repository.
 
 
 def _empty_html() -> str:
-    """Placeholder block when there are no new papers."""
+    """HTML block when there are no new papers."""
     return """
     <table width="100%" style="border:1px solid #ddd;border-radius:8px;
                                padding:16px;background-color:#f9f9f9;">
@@ -101,7 +84,7 @@ def _empty_html() -> str:
 def _stars(score: float) -> str:
     full_star = '<span class="full-star">⭐</span>'
     half_star = '<span class="half-star">⭐</span>'
-    low, high = 6, 8  # threshold range
+    low, high = 6, 8
     if score <= low:
         return ""
     if score >= high:
@@ -120,25 +103,23 @@ def _stars(score: float) -> str:
 # ----------------------- single-paper template ---------------------- #
 def _paper_block(p: PreprintPaper) -> str:
     """Return the HTML block for one paper."""
-    # ---------- title ----------
+    # Title prefix was already set via mark_paper() in main.py
     title_prefix = "🧑🏻‍🔬 " if getattr(p, "is_favorite", False) else ""
     title_html = f"{title_prefix}{p.title}"
 
-    # ---------- authors ----------
-    author_cells: list[str] = []
+    # Authors (highlight favourites)
+    author_cells = []
     for a in p.authors:
-        if _is_favourite(a):
+        if is_fav_author(a):
             author_cells.append(f'🧑🏻‍🔬 <span class="fav-author">{a}</span>')
         else:
             author_cells.append(a)
     authors_html = ", ".join(author_cells)
 
-    # ---------- affiliations ----------
-    affil_html = None
-    if getattr(p, "affiliations", None):
-        affil_html = ", ".join(p.affiliations)
+    # Affiliations
+    affil_html = ", ".join(p.affiliations) if getattr(p, "affiliations", None) else None
 
-    # ---------- Open-Web button ----------
+    # Open-Web button
     web_btn = (
         f'<a href="{p.url}" style="display:inline-block;text-decoration:none;'
         'font-size:14px;font-weight:bold;color:#fff;background-color:#0275d8;'
@@ -182,14 +163,11 @@ def _paper_block(p: PreprintPaper) -> str:
 
 # --------------------------- renderer ------------------------------- #
 def render_email(papers: Sequence[PreprintPaper]) -> str:
-    """Return the full HTML e-mail, with favourites pinned to the top."""
-
-    sorted_papers = sorted(papers, key=lambda p: getattr(p, "is_favorite", False), reverse=True)
-
-    if not sorted_papers:
+    """Assemble full HTML e-mail."""
+    if not papers:
         return framework.replace("__CONTENT__", _empty_html())
 
-    blocks = [_paper_block(p) for p in tqdm(sorted_papers, desc="Rendering e-mail")]
+    blocks = [_paper_block(p) for p in tqdm(papers, desc="Rendering e-mail")]
     content = "<br>" + "</br><br>".join(blocks) + "</br>"
     return framework.replace("__CONTENT__", content)
 
@@ -203,7 +181,7 @@ def send_email(
     smtp_port: int,
     html: str,
 ) -> None:
-    """Send the HTML e-mail via SMTP."""
+    """Send the HTML via SMTP."""
 
     def _fmt(addr: str) -> str:
         name, mail = parseaddr(addr)
@@ -213,14 +191,14 @@ def send_email(
     msg["From"] = _fmt(f"Daily Preprint Bot <{sender}>")
     msg["To"] = _fmt(f"Reader <{receiver}>")
     today = datetime.datetime.now().strftime("%Y/%m/%d")
-    msg["Subject"] = Header(f"Daily Preprint Digest -- {today}", "utf-8").encode()
+    msg["Subject"] = Header(f"Daily Preprint Digest — {today}", "utf-8").encode()
 
-    # Try STARTTLS first; fall back to SSL if not supported.
+    # Prefer STARTTLS; fall back to SSL
     try:
         server = smtplib.SMTP(smtp_server, smtp_port)
         server.starttls()
     except Exception as e:
-        logger.warning(f"STARTTLS failed: {e} -- falling back to SSL")
+        logger.warning(f"STARTTLS failed: {e} — falling back to SSL")
         server = smtplib.SMTP_SSL(smtp_server, smtp_port)
 
     server.login(sender, password)
