@@ -25,7 +25,7 @@ from tqdm import tqdm
 
 from fav_utils import mark_paper
 from paper import PreprintPaper, fetch_today_papers
-from llm import set_global_llm
+from llm import set_global_llm, get_llm
 
 # =============================  Zotero  ============================== #
 def get_zotero_corpus(user_id: str, api_key: str) -> list[dict]:
@@ -227,7 +227,19 @@ else:
     else:
         logger.info("Generating TLDR with local LLM …")
         set_global_llm(lang=args.language)
-
+    llm_instance = get_llm()
+    for paper in tqdm(papers, desc="Generating TLDR with LLM"):
+        messages = [
+            {"role": "system", "content": f"You are a helpful assistant. Please summarize the following scientific abstract concisely in {llm_instance.lang}. Focus on the main findings and implications."},
+            {"role": "user", "content": paper.abstract}
+        ]
+        try:
+            paper.tldr = llm_instance.generate(messages)
+            logger.debug(f"Generated TLDR for {paper.doi} in {llm_instance.lang}")
+        except Exception as e:
+            logger.error(f"Failed to generate TLDR for {paper.doi}: {e}. Falling back to abstract.")
+            paper.tldr = paper.abstract
+    
 # =======================  Build and send e-mail  ====================== #
 logger.info("Rendering e-mail …")
 html = render_email(papers)
