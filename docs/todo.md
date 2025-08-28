@@ -40,3 +40,33 @@
 引入 `async/await` 异步编程，使用 `aiohttp` 等异步 HTTP 客户端并行或异步地抓取数据。
 
 **优先级：** 低（在计算瓶颈解决后，如果网络请求成为新的瓶要点，再进行考虑）。
+
+
+# TODO List for Preprint Recommender
+## LLM API 优化
+### 1. 异步调用 OpenAI 兼容 API
+**目标：** 提高生成 TLDR 的效率，尤其是在需要处理大量论文时。
+**当前状态：** `LLM.generate` 方法目前是同步调用，导致 TLDR 生成过程串行执行。
+**实现思路：**
+*   修改 `llm.py`：
+    *   将 `openai.OpenAI` 客户端替换为 `openai.AsyncOpenAI`。
+    *   将 `LLM.generate` 方法改为 `async def`。
+    *   在 `generate` 方法内部，使用 `await self.llm.chat.completions.create(...)` 进行异步调用。
+    *   引入 `backoff` 库（`pip install backoff`）来自动处理 `openai.RateLimitError` 和其他网络异常，实现指数退避重试机制。
+*   修改 `main.py`：
+    *   将主执行流封装在一个 `async def main_flow()` 函数中。
+    *   在脚本入口点使用 `asyncio.run(main_flow())` 运行。
+    *   在需要生成 TLDR 的地方，收集所有 `llm_instance.generate(messages)` 协程任务到一个列表中。
+    *   使用 `await asyncio.gather(*tldr_tasks, return_exceptions=True)` 并行执行这些任务，并确保结果与原始论文顺序对应。
+    *   使用 `tqdm` 包装 `asyncio.gather` 以显示进度条。
+*   **控制方式：** 可以通过一个新的环境变量（例如 `USE_ASYNC_LLM=true`）来控制是否启用异步调用。如果未设置或为 `false`，则回退到同步调用。
+### 2. LLM API Key 池
+**目标：** 绕过单个 API Key 的速率限制（例如 Gemini 的 10/minute），通过轮询多个 API Key 来提高吞吐量。
+**当前状态：** `LLM` 类目前只支持单个 API Key。
+**实现思路：**
+*   修改 `llm.py`：
+    *   `LLM` 类不再直接持有单个 `AsyncOpenAI` 客户端，而是维护一个 `AsyncOpenAI` 客户端的列表（池），每个客户端对应一个 API Key。
+    *   `set_global_llm` 应该能够接收一个 API Key 列表（例如，通过逗号分隔的环境变量 `OPENAI_API_KEYS="key1,key2,key3"`）。
+    *   在 `LLM.generate` 方法中，实现一个简单的轮询机制，从池中选择一个可用的客户端。
+    *   需要考虑如何处理某个 Key 达到速率限制的情况（例如，暂时将其从可用池中移除一段时间）。
+*   **控制方式：** 可以通过环境变量（例如 `OPENAI_API_KEYS` 包含多个 Key 时自动启用）来控制是否启用 Key 池。
