@@ -76,13 +76,13 @@ def rerank_paper(
     # GitHub Actions ubuntu-latest runner 通常有 2 个 CPU 核心
     # 对于 SentenceTransformer 这种底层有 C/CUDA 实现的任务，线程数可以适当多于核心数
     # 经验值：2-4 倍的 CPU 核心数，但为了简单和安全，我们先用 2 倍
-    num_workers = (os.cpu_count() or 2) * 2 # 默认 4 个线程
-    
+    # num_workers = (os.cpu_count() or 2) * 2 # 默认 4 个线程
+    num_workers = 2
     # 将语料库摘要分成多个批次
     # 批次大小可以根据实际情况调整，这里取一个经验值，确保每个线程有足够的工作
     # 目标是让每个批次足够大，以摊销 Python 开销，但又不能太大导致内存问题
     # 假设 3947 篇论文，4 个 worker，每个 worker 处理约 1000 篇，分成 10-20 个批次
-    batch_size = 256 # 这是一个经验值，可以根据实际情况调整
+    batch_size = 512 # 这是一个经验值，可以根据实际情况调整
     
     batches = [corpus_abstracts[i:i + batch_size] for i in range(0, len(corpus_abstracts), batch_size)]
     # 使用 ThreadPoolExecutor 进行并行编码
