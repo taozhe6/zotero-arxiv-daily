@@ -19,6 +19,7 @@ class LLM:
             )
         self.model = model
         self.lang = lang
+        logger.debug(f"LLM instance initialized with language: {self.lang}")
 
     def generate(self, messages: list[dict]) -> str:
         if isinstance(self.llm, OpenAI):
