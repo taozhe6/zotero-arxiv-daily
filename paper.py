@@ -15,8 +15,8 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Set
 from functools import cached_property
 import tiktoken
-from loguru import logger
-from llm import get_llm
+import asyncio # 新增导入 asyncio
+from llm import get_llm_client # 修改为 get_llm_client
 _UA_HEADERS = {
     "User-Agent": "Mozilla/5.0 (GitHub Actions; +https://github.com/DuckLeeyk/zotero-genetics-daily)"
 }
@@ -57,11 +57,10 @@ class PreprintPaper:
     def summary(self) -> str:
         return self.abstract
     
-    @cached_property
-    def tldr(self) -> str:
-        llm_instance = get_llm() # 获取全局 LLM 实例
-        # 重新构建 prompt，只使用 PreprintPaper 实际拥有的数据 (title 和 abstract)
-        # 模仿 Arxiv 版本的 prompt 结构，但移除了 introduction 和 conclusion
+    # 将 tldr 属性改为异步方法
+    async def get_tldr(self) -> str: # 修改为异步方法
+        llm_instance = get_llm_client() # 获取全局 LLM 客户端实例
+        
         prompt_template = """Given the title and abstract of a paper, generate a one-sentence TLDR summary in __LANG__:
         
         Title: __TITLE__
@@ -71,14 +70,15 @@ class PreprintPaper:
         prompt = prompt_template.replace('__LANG__', llm_instance.lang)
         prompt = prompt.replace('__TITLE__', self.title)
         prompt = prompt.replace('__ABSTRACT__', self.abstract)
-        # 使用 gpt-4o tokenizer 进行 token 截断，模仿 Arxiv 版本
+        
         enc = tiktoken.encoding_for_model("gpt-4o")
         prompt_tokens = enc.encode(prompt)
-        prompt_tokens = prompt_tokens[:4000]  # 截断到 4000 tokens
+        prompt_tokens = prompt_tokens[:4000]
         prompt = enc.decode(prompt_tokens)
         
         try:
-            tldr_content = llm_instance.generate(
+            # 调用异步的 generate_tldr 方法
+            tldr_content = await llm_instance.generate_tldr( 
                 messages=[
                     {
                         "role": "system",
