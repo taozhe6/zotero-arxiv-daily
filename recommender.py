@@ -9,6 +9,7 @@ from typing import List
 
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
+from loguru import logger # 导入 logger
 
 from paper import PreprintPaper  # unified data model
 
