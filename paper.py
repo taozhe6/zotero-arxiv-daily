@@ -49,6 +49,8 @@ class PreprintPaper:
     affiliations: Optional[List[str]] = field(default=None, repr=False)
 
     is_favorite: bool = field(default=False, repr=False, compare=False)
+    # 新增一个属性来存储 TLDR 结果
+    tldr_content: str = field(default="", repr=False) # 默认值可以为空字符串或摘要
     @property
     def authors(self) -> List[str]:
         return [a.strip() for a in self.authors_raw.split(";") if a.strip()]
@@ -88,6 +90,7 @@ class PreprintPaper:
                 ]
             )
             logger.debug(f"Generated TLDR for {self.doi} in {llm_instance.lang}")
+            self.tldr_content = tldr_result
             return tldr_content
         except Exception as e:
             logger.error(f"Failed to generate TLDR for {self.doi}: {e}. Falling back to abstract.")
