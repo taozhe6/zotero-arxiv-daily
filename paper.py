@@ -14,6 +14,7 @@ import urllib.request as _url
 from dataclasses import dataclass, field
 from typing import List, Optional, Set
 from functools import cached_property
+import tiktoken
 from loguru import logger
 from llm import get_llm
 _UA_HEADERS = {
@@ -57,10 +58,40 @@ class PreprintPaper:
     def summary(self) -> str:
         return self.abstract
     
-    @property
+    @cached_property
     def tldr(self) -> str:
-        # 如果_tldr有内容，就返回_tldr；否则返回原始摘要
-        return self._tldr if self._tldr else self.abstract
+        llm_instance = get_llm() # 获取全局 LLM 实例
+        # 模仿 Arxiv 版本的 prompt 结构，但只使用 PreprintPaper 已有的数据
+        prompt_template = """Given the title and abstract of a paper, generate a one-sentence TLDR summary in __LANG__:
+        
+        Title: __TITLE__
+        Abstract: __ABSTRACT__
+        """
+        
+        prompt = prompt_template.replace('__LANG__', llm_instance.lang)
+        prompt = prompt.replace('__TITLE__', self.title)
+        prompt = prompt.replace('__ABSTRACT__', self.abstract)
+        # 使用 gpt-4o tokenizer 进行 token 截断，模仿 Arxiv 版本
+        enc = tiktoken.encoding_for_model("gpt-4o")
+        prompt_tokens = enc.encode(prompt)
+        prompt_tokens = prompt_tokens[:4000]  # 截断到 4000 tokens
+        prompt = enc.decode(prompt_tokens)
+        
+        try:
+            tldr_content = llm_instance.generate(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an assistant who perfectly summarizes scientific paper, and gives the core idea of the paper to the user.",
+                    },
+                    {"role": "user", "content": prompt},
+                ]
+            )
+            logger.debug(f"Generated TLDR for {self.doi} in {llm_instance.lang}")
+            return tldr_content
+        except Exception as e:
+            logger.error(f"Failed to generate TLDR for {self.doi}: {e}. Falling back to abstract.")
+            return self.abstract
 
     @tldr.setter # <-- 新增这个setter，允许外部修改tldr
     def tldr(self, value: str):
