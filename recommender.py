@@ -3,7 +3,7 @@
 # user’s Zotero library (fresh items in Zotero are weighted higher).
 # ----------------------------------------------------------------------
 from __future__ import annotations
-
+import tqdm
 from datetime import datetime
 from typing import List
 import os # 新增导入 os
@@ -41,7 +41,8 @@ def rerank_paper(
         key=lambda x: datetime.strptime(x["data"]["dateAdded"], "%Y-%m-%dT%H:%M:%SZ"),
         reverse=True,
     )
-    decay = 1 / (1 + np.log10(np.arange(len(corpus_sorted)) + 1))
+    # decay = 1 / (1 + np.log10(np.arange(len(corpus_sorted)) + 1))
+    decay = np.ones(len(corpus_sorted))
     decay /= decay.sum()  # normalize to 1
 
     # original code
