@@ -25,7 +25,7 @@ from tqdm.asyncio import tqdm as async_tqdm
 
 from fav_utils import mark_paper
 from paper import PreprintPaper, fetch_today_papers
-from llm import set_global_llm
+from llm import set_global_llm_client, close_global_key_pool, GLOBAL_KEY_POOL
 
 # =============================  Zotero  ============================== #
 def get_zotero_corpus(user_id: str, api_key: str) -> list[dict]:
