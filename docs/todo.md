@@ -70,3 +70,33 @@
     *   在 `LLM.generate` 方法中，实现一个简单的轮询机制，从池中选择一个可用的客户端。
     *   需要考虑如何处理某个 Key 达到速率限制的情况（例如，暂时将其从可用池中移除一段时间）。
 *   **控制方式：** 可以通过环境变量（例如 `OPENAI_API_KEYS` 包含多个 Key 时自动启用）来控制是否启用 Key 池。
+
+
+## 待办事项
+### 1. 优化 `rerank_paper` 函数中的 Zotero Corpus 编码性能 (多进程)
+**背景：**
+当前的 `rerank_paper` 函数使用 `ThreadPoolExecutor` 对 Zotero Corpus 进行编码，但在 GitHub Actions 的 2 核 CPU 环境下，性能提升不明显（仅从 601 秒缩短到 565 秒）。这可能是由于 Python GIL 的限制以及 GitHub Actions 资源的调度开销。
+**目标：**
+通过使用 `ProcessPoolExecutor` 绕过 GIL，充分利用多核 CPU，进一步显著缩短 Zotero Corpus 编码阶段的耗时。
+**实施方案：**
+将 `rerank_paper` 函数中对 `corpus_abstracts` 进行编码的部分，从 `ThreadPoolExecutor` 切换到 `ProcessPoolExecutor`。
+**具体修改点：**
+1.  **导入 `ProcessPoolExecutor`：** 将 `from concurrent.futures import ThreadPoolExecutor, as_completed` 修改为 `from concurrent.futures import ProcessPoolExecutor, as_completed`。
+2.  **替换 `ThreadPoolExecutor`：** 将 `with ThreadPoolExecutor(...)` 修改为 `with ProcessPoolExecutor(...)`。
+3.  **调整 `num_workers`：** 将 `num_workers` 设置为 `os.cpu_count() or 2`，即与 GitHub Actions runner 的物理 CPU 核心数匹配（通常为 2）。
+4.  **模型加载策略调整：**
+    *   由于 `SentenceTransformer` 模型实例不能直接在进程间序列化传递，需要在每个子进程内部重新加载模型。
+    *   因此，`_encode_batch_safe` 辅助函数需要修改为接收 `model_name` (字符串) 而不是 `encoder_instance`。
+    *   在 `_encode_batch_safe` 函数内部，使用 `local_encoder = SentenceTransformer(model_name)` 重新加载模型。
+    *   主进程也需要一个 `encoder` 实例来编码 `candidate` 论文，因此在 `cand_emb` 编码前，也需要 `main_process_encoder = SentenceTransformer(model)`。
+**潜在风险/注意事项：**
+*   **模型重复加载开销：** 每个子进程都会重新加载模型。对于 `avsolatorio/GIST-small-Embedding-v0` 这种小模型，开销可能可接受，但对于大模型可能成为新的瓶颈。
+*   **内存消耗：** 每个进程都有独立的内存空间，多进程可能会比多线程消耗更多内存。在 GitHub Actions 这种资源受限的环境中，需要监控内存使用情况，避免 OOM (Out Of Memory) 错误。
+*   **启动时间：** 启动进程的开销通常大于启动线程。
+**测试计划：**
+1.  实施上述代码修改。
+2.  在 GitHub Actions 上运行，并记录 `Zotero Corpus 编码` 阶段的耗时。
+3.  与当前 565 秒的耗时进行比较，评估性能提升。
+4.  监控 GitHub Actions 的内存使用情况。
+**预期效果：**
+如果 GitHub Actions 具有 2 个物理核心且模型加载开销可控，预计 `Zotero Corpus 编码` 阶段的耗时将显著缩短，可能接近 2 倍的加速。
