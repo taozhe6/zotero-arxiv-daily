@@ -13,7 +13,21 @@ jobs:
         with:
           repository: ${{ vars.REPOSITORY }}
           ref: ${{ vars.REF }}
-
+      - name: Cache SentenceTransformer Model
+        id: cache-model
+        uses: actions/cache@v3
+        with:
+          # SentenceTransformer 默认缓存路径
+          path: ~/.cache/huggingface/hub/
+          # 缓存键：包含 pyproject.toml 的哈希和模型名称
+          # 'avsolatorio/GIST-small-Embedding-v0' 是 recommender.py 中使用的默认模型
+          # 如果你的 MODEL_NAME 变量是动态的，并且可能改变，你可以使用 ${{ secrets.MODEL_NAME }}
+          # 但为了简单和稳定，我们假设 recommender.py 中的默认模型是主要的
+          key: sbert-model-${{ hashFiles('pyproject.toml') }}-avsolatorio/GIST-small-Embedding-v0
+          # 恢复键：用于在精确匹配失败时，尝试恢复最近的缓存
+          restore-keys: |
+            sbert-model-${{ hashFiles('pyproject.toml') }}-
+      # --- END: 添加这个缓存步骤 ---
       - name: Setup uv
         uses: astral-sh/setup-uv@v3
         with:
