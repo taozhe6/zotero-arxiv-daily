@@ -45,7 +45,7 @@ def rerank_paper(
     decay = np.ones(len(corpus_sorted))
     decay /= decay.sum()  # normalize to 1
 
-    ---------- encode text ----------
+    # ---------- encode text ----------
     corpus_emb = encoder.encode(
         [item["data"]["abstractNote"] for item in corpus_sorted],
         convert_to_tensor=True,
