@@ -85,7 +85,6 @@ def rerank_paper(
     batch_size = 256 # 这是一个经验值，可以根据实际情况调整
     
     batches = [corpus_abstracts[i:i + batch_size] for i in range(0, len(corpus_abstracts), batch_size)]
-    corpus_embeddings_list = []
     # 使用 ThreadPoolExecutor 进行并行编码
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
         # 提交每个批次的编码任务，并记录其原始索引，以便按顺序合并
