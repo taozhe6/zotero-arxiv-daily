@@ -10,7 +10,7 @@ import os
 import sys
 from tempfile import mkstemp
 from typing import List, Set
-
+import asyncio # 新增导入 asyncio
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -21,7 +21,7 @@ from loguru import logger
 from pyzotero import zotero
 from recommender import rerank_paper
 from construct_email import render_email, send_email
-from tqdm import tqdm
+from tqdm.asyncio import tqdm as async_tqdm
 
 from fav_utils import mark_paper
 from paper import PreprintPaper, fetch_today_papers
@@ -156,7 +156,8 @@ add_argument(
     default=False,
     help="Use a cloud LLM (OpenAI-compatible API) for TLDR generation",
 )
-add_argument("--openai_api_key", type=str, default=None, help="OpenAI API Key")
+# 修改为支持多个 API Key，通过环境变量传入
+add_argument("--openai_api_keys", type=str, default=None, help="Comma-separated OpenAI API Keys (e.g., sk-key1,sk-key2)")
 add_argument(
     "--openai_api_base",
     type=str,
@@ -165,7 +166,9 @@ add_argument(
 )
 add_argument("--model_name", type=str, default="gpt-4o", help="Model name")
 add_argument("--language", type=str, default="English", help="TLDR language")
-
+# 新增密钥池相关参数
+add_argument("--llm_key_pool_blacklist_threshold", type=int, default=3, help="LLM key pool blacklist threshold")
+add_argument("--llm_key_pool_recovery_interval", type=int, default=300, help="LLM key pool recovery interval in seconds")
 # Favorite authors
 add_argument(
     "--favorite_authors",
@@ -184,7 +187,7 @@ logger.remove()
 logger.add(sys.stdout, level="DEBUG" if args.debug else "INFO")
 
 if args.use_llm_api and args.openai_api_key is None:
-    parser.error("--use_llm_api requires --openai_api_key")
+    parser.error("--use_llm_api requires --openai_api_keys (comma-separated)")
 
 fav_author_set = _load_favorite_authors(args.favorite_authors)
 
