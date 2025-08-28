@@ -3,7 +3,7 @@
 # user’s Zotero library (fresh items in Zotero are weighted higher).
 # ----------------------------------------------------------------------
 from __future__ import annotations
-import tqdm
+from tqdm import tqdm
 from datetime import datetime
 from typing import List
 import os # 新增导入 os
