@@ -192,58 +192,86 @@ if args.use_llm_api and args.openai_api_key is None:
 fav_author_set = _load_favorite_authors(args.favorite_authors)
 
 # =============================  Flow  ================================ #
-logger.info("Downloading Zotero library …")
-corpus = get_zotero_corpus(args.zotero_id, args.zotero_key)
-logger.info(f"{len(corpus)} items found")
-
-if args.zotero_ignore:
-    logger.info("Applying ignore rules …")
-    corpus = filter_corpus(corpus, args.zotero_ignore)
-    logger.info(f"{len(corpus)} items remain after filtering")
-
-logger.info("Fetching new preprints …")
-papers = get_preprints(args.debug)
-
-if len(papers) == 0:
-    logger.info("No new preprints found")
-    if not args.send_empty:
-        sys.exit(0)
-else:
-    logger.info("Computing similarity scores and re-ranking …")
-    papers = rerank_paper(papers, corpus)
-
-    # Mark favorites and resort BEFORE applying max_paper_num
-    papers = mark_and_sort(papers, fav_author_set)
-
-    if args.max_paper_num != -1:
-        papers = papers[: args.max_paper_num]
-
-    # Configure the global LLM
-    if args.use_llm_api:
-        logger.info("Generating TLDR with cloud LLM …")
-        set_global_llm(
-            api_key=args.openai_api_key,
-            base_url=args.openai_api_base,
-            model=args.model_name,
-            lang=args.language,
-        )
+async def main_async_flow(): # 将主逻辑封装为异步函数
+    global GLOBAL_KEY_POOL # 声明使用全局密钥池
+    logger.info("Downloading Zotero library …")
+    corpus = get_zotero_corpus(args.zotero_id, args.zotero_key)
+    logger.info(f"{len(corpus)} items found")
+    if args.zotero_ignore:
+        logger.info("Applying ignore rules …")
+        corpus = filter_corpus(corpus, args.zotero_ignore)
+        logger.info(f"{len(corpus)} items remain after filtering")
+    logger.info("Fetching new preprints …")
+    papers = get_preprints(args.debug)
+    if len(papers) == 0:
+        logger.info("No new preprints found")
+        if not args.send_empty:
+            sys.exit(0)
     else:
-        logger.info("Generating TLDR with local LLM …")
-        set_global_llm(lang=args.language)
-    
-# =======================  Build and send e-mail  ====================== #
-logger.info("Rendering e-mail …")
-html = render_email(papers)
-
-logger.info("Sending e-mail …")
-send_email(
-    args.sender,
-    args.receiver,
-    args.sender_password,
-    args.smtp_server,
-    args.smtp_port,
-    html,
-)
-logger.success(
-    "E-mail sent! If nothing arrives, check the spam folder or SMTP settings."
-)
+        logger.info("Computing similarity scores and re-ranking …")
+        # 恢复 rerank_paper 为同步调用，移除 ThreadPoolExecutor
+        # 如果你之前已经修改了 rerank_paper 为同步，这里无需额外修改
+        # 如果没有，请参考我之前给出的“方案一：测试禁用并发”的代码
+        papers = rerank_paper(papers, corpus) 
+        # Mark favorites and resort BEFORE applying max_paper_num
+        papers = mark_and_sort(papers, fav_author_set)
+        if args.max_paper_num != -1:
+            papers = papers[: args.max_paper_num]
+        # 配置全局 LLM 客户端和密钥池
+        if args.use_llm_api:
+            logger.info("Generating TLDR with cloud LLM …")
+            # 初始化密钥池
+            api_keys = [k.strip() for k in args.openai_api_keys.split(',') if k.strip()]
+            if len(api_keys) > 1: # 如果有多个密钥，则使用密钥池
+                GLOBAL_KEY_POOL = SimpleKeyPool(
+                    keys=api_keys,
+                    blacklist_threshold=args.llm_key_pool_blacklist_threshold,
+                    recovery_interval_seconds=args.llm_key_pool_recovery_interval
+                )
+                set_global_llm_client(
+                    base_url=args.openai_api_base,
+                    model=args.model_name,
+                    lang=args.language,
+                    key_pool=GLOBAL_KEY_POOL # 将密钥池实例传递给 LLM 客户端
+                )
+            else: # 只有一个密钥，兼容旧逻辑，不使用密钥池
+                set_global_llm_client(
+                    api_key=api_keys[0],
+                    base_url=args.openai_api_base,
+                    model=args.model_name,
+                    lang=args.language,
+                    key_pool=None # 不使用密钥池
+                )
+            
+            # 异步并发生成 TLDR
+            tldr_tasks = [paper.get_tldr() for paper in papers]
+            # 使用 tqdm.asyncio 来显示异步任务的进度条
+            await async_tqdm.gather(*tldr_tasks, desc="Generating TLDRs concurrently")
+        else:
+            logger.info("Generating TLDR with local LLM …")
+            set_global_llm_client(lang=args.language)
+            # 如果是本地 LLM，虽然 get_tldr 是 async 方法，但内部是同步调用
+            # 仍然可以并发执行，但不会有 I/O 并行优势
+            tldr_tasks = [paper.get_tldr() for paper in papers]
+            await async_tqdm.gather(*tldr_tasks, desc="Generating TLDRs with local LLM")
+        
+    # =======================  Build and send e-mail  ====================== #
+    logger.info("Rendering e-mail …")
+    html = render_email(papers)
+    logger.info("Sending e-mail …")
+    send_email(
+        args.sender,
+        args.receiver,
+        args.sender_password,
+        args.smtp_server,
+        args.smtp_port,
+        html,
+    )
+    logger.success(
+        "E-mail sent! If nothing arrives, check the spam folder or SMTP settings."
+    )
+    # 关闭全局密钥池（如果存在）
+    await close_global_key_pool()
+if __name__ == "__main__":
+    # 运行异步主函数
+    asyncio.run(main_async_flow())
