@@ -48,7 +48,7 @@ class PreprintPaper:
     affiliations: Optional[List[str]] = field(default=None, repr=False)
 
     is_favorite: bool = field(default=False, repr=False, compare=False)
-
+    _tldr: str = field(default="", repr=False)
     @property
     def authors(self) -> List[str]:
         return [a.strip() for a in self.authors_raw.split(";") if a.strip()]
@@ -56,11 +56,16 @@ class PreprintPaper:
     @property
     def summary(self) -> str:
         return self.abstract
-
+    
     @property
     def tldr(self) -> str:
-        return self.abstract
+        # 如果_tldr有内容，就返回_tldr；否则返回原始摘要
+        return self._tldr if self._tldr else self.abstract
 
+    @tldr.setter # <-- 新增这个setter，允许外部修改tldr
+    def tldr(self, value: str):
+        self._tldr = value
+        
     @property
     def paper_id(self) -> str:
         return self.doi
