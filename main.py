@@ -186,7 +186,7 @@ logger.debug(f"Parsed language argument: {args.language}")
 logger.remove()
 logger.add(sys.stdout, level="DEBUG" if args.debug else "INFO")
 
-if args.use_llm_api and args.openai_api_key is None:
+if args.use_llm_api and args.openai_api_keys is None:
     parser.error("--use_llm_api requires --openai_api_keys (comma-separated)")
 
 fav_author_set = _load_favorite_authors(args.favorite_authors)
