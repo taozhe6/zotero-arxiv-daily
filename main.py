@@ -178,7 +178,7 @@ add_argument(
 parser.add_argument("--debug", action="store_true", help="Verbose logging")
 
 args = parser.parse_args()
-
+logger.debug(f"Parsed language argument: {args.language}")
 # ============================  Logging  ============================== #
 logger.remove()
 logger.add(sys.stdout, level="DEBUG" if args.debug else "INFO")
