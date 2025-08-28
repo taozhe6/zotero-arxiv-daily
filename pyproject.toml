@@ -1,0 +1,24 @@
+[project]
+name = "zotero-genetics-daily"
+version = "0.3.5"
+description = "Fetch the latest genetics and genomics preprints from bioRxiv & medRxiv, generate a daily RSS feed, and automatically send new items to your email inbox."
+readme = "README.md"
+requires-python = ">=3.11"
+
+dependencies = [
+    # ---------- new ----------
+    "beautifulsoup4>=4.12.2",
+    "lxml>=4.9.3",
+    "tqdm>=4.67.0",
+
+    # ---------- original ----------
+    "llama-cpp-python>=0.3.2",
+    "loguru>=0.7.2",
+    "pyzotero>=1.5.25",
+    "scikit-learn>=1.5.2",
+    "sentence-transformers>=3.3.1",
+    "openai>=1.57.0",
+    "gitignore-parser>=0.1.11",
+    "tiktoken>=0.8.0",
+    "python-dotenv>=1.0.1",
+]
