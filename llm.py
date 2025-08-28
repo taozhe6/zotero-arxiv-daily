@@ -84,7 +84,8 @@ class LLMClient: # 重命名为 LLMClient 以避免与 LLM 模块混淆
                             raise
                         
                         # 否则，等待一段时间再重试 (指数退避)
-                        await asyncio.sleep(2 ** attempt + random.uniform(0, 1)) # 2^attempt 秒 + 随机抖动
+                        base_delay = 10 # 初始等待时间，根据Google API建议调整
+                        await asyncio.sleep(base_delay * (2 ** attempt) + random.uniform(0, 1)) # 2^attempt 秒 + 随机抖动
                 
                 raise Exception("Failed to generate TLDR after multiple attempts with key pool.") # 理论上不会执行到这里
             else:
