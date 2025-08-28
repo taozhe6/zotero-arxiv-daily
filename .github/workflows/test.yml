@@ -42,11 +42,14 @@ jobs:
 
           # -------- LLM --------
           USE_LLM_API:     ${{ secrets.USE_LLM_API }}
-          OPENAI_API_KEY:  ${{ secrets.OPENAI_API_KEY }}
+          #OPENAI_API_KEY:  ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEYS: ${{ secrets.OPENAI_API_KEYS }} 
           OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
           MODEL_NAME:      ${{ secrets.MODEL_NAME }}
           LANGUAGE:        ${{ vars.LANGUAGE }}
-
+          # 新增密钥池参数
+          LLM_KEY_POOL_BLACKLIST_THRESHOLD: ${{ vars.LLM_KEY_POOL_BLACKLIST_THRESHOLD }}
+          LLM_KEY_POOL_RECOVERY_INTERVAL:   ${{ vars.LLM_KEY_POOL_RECOVERY_INTERVAL }}
           # -------- favorite authors --------
           FAVORITE_AUTHORS: ${{ secrets.FAVORITE_AUTHORS }}
         run: |
