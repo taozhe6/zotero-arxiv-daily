@@ -5,7 +5,6 @@
 # and merge them into one list (duplicates removed by DOI).
 # ----------------------------------------------------------------------
 from __future__ import annotations
-from loguru import logger
 import datetime as _dt
 import json as _json
 import urllib.error as _uerr
