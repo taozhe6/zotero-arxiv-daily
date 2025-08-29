@@ -51,6 +51,7 @@ jobs:
           LLM_KEY_POOL_BLACKLIST_THRESHOLD: ${{ vars.LLM_KEY_POOL_BLACKLIST_THRESHOLD }}
           LLM_KEY_POOL_RECOVERY_INTERVAL:   ${{ vars.LLM_KEY_POOL_RECOVERY_INTERVAL }}
           LLM_KEY_POOL_RPM_LIMIT:           ${{ secrets.LLM_KEY_POOL_RPM_LIMIT }}
+          CONCURRENCY_LIMIT:                  ${{ vars.CONCURRENCY_LIMIT }}
           # -------- favorite authors --------
           FAVORITE_AUTHORS: ${{ secrets.FAVORITE_AUTHORS }}
         run: |
