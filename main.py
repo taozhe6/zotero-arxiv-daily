@@ -256,15 +256,18 @@ async def main_async_flow(): # 将主逻辑封装为异步函数
             # 异步并发生成 TLDR
             tldr_tasks = [paper.get_tldr() for paper in papers]
             # 使用 tqdm.asyncio 来显示异步任务的进度条
-            await async_tqdm.gather(*tldr_tasks, desc="Generating TLDRs concurrently")
+            tldr_results = await async_tqdm.gather(*tldr_tasks, desc="Generating TLDRs concurrently")
+            for paper, tldr_text in zip(papers, tldr_results):
+                paper.tldr_content = tldr_text
         else:
             logger.info("Generating TLDR with local LLM …")
             set_global_llm_client(lang=args.language)
             # 如果是本地 LLM，虽然 get_tldr 是 async 方法，但内部是同步调用
             # 仍然可以并发执行，但不会有 I/O 并行优势
             tldr_tasks = [paper.get_tldr() for paper in papers]
-            await async_tqdm.gather(*tldr_tasks, desc="Generating TLDRs with local LLM")
-        
+            tldr_results = await async_tqdm.gather(*tldr_tasks, desc="Generating TLDRs with local LLM")
+            for paper, tldr_text in zip(papers, tldr_results):
+                paper.tldr_content = tldr_text
     # =======================  Build and send e-mail  ====================== #
     logger.info("Rendering e-mail …")
     html = render_email(papers)
