@@ -49,45 +49,44 @@ class LLMClient: # 重命名为 LLMClient 以避免与 LLM 模块混淆
         """
         if isinstance(self.client, AsyncOpenAI):
             if self.key_pool:
-                # 使用密钥池进行异步调用
-                max_attempts_per_request = self.key_pool.max_retries_per_key + 1 # 初始尝试 + 重试次数
+                max_attempts_per_request = self.key_pool.max_retries_per_key + 1
                 
                 for attempt in range(max_attempts_per_request):
-                    key_value = await self.key_pool.get_key()
+                    key_value = await self.key_pool.get_key() # 密钥池会等待直到有可用 Key
                     if not key_value:
                         logger.error("No active API key available from pool. Cannot generate TLDR.")
                         raise Exception("No active API key available.")
-
                     try:
-                        # 动态设置 API Key
                         self.client.api_key = key_value 
                         response = await self.client.chat.completions.create(
                             messages=messages, 
                             temperature=0, 
                             model=self.model
                         )
-                        await self.key_pool.update_key_status(key_value, True) # 成功则更新状态
+                        await self.key_pool.update_key_status(key_value, True)
                         return response.choices[0].message.content
                     except Exception as e:
-                        logger.error(f"API call with key {key_value[:8]}... failed (attempt {attempt + 1}/{max_attempts_per_request}): {e}")
-                        await self.key_pool.update_key_status(key_value, False, str(e)) # 失败则更新状态
+                        error_str = str(e)
+                        logger.error(f"API call with key {key_value[:8]}... failed (attempt {attempt + 1}/{max_attempts_per_request}): {error_str}")
+                        await self.key_pool.update_key_status(key_value, False, error_str)
                         
-                        # 如果是速率限制错误 (429)，并且还有其他活跃密钥，可以立即尝试下一个密钥
-                        # 否则，等待一段时间再重试
-                        if "429" in str(e) and len(self.key_pool._active_keys) > 0: # 检查是否有其他活跃密钥
-                            logger.warning(f"Rate limit hit with key {key_value[:8]}..., trying next key immediately.")
-                            continue # 立即尝试下一个密钥
+                        # 如果是 429 错误，密钥池已经处理了等待和轮换。
+                        # 这里只需要记录，并让循环继续，密钥池会提供下一个 Key 或等待。
+                        if "429" in error_str:
+                            logger.warning(f"Rate limit hit with key {key_value[:8]}..., relying on key pool for next attempt.")
+                            # 不需要额外的 sleep，因为 get_key() 已经包含了等待逻辑
+                            continue 
                         
-                        # 如果是最后一个尝试，或者没有其他活跃密钥，则抛出异常
-                        if attempt == max_attempts_per_request - 1 or not self.key_pool._active_keys:
-                            logger.error(f"All attempts failed or no active keys left for this request.")
+                        # 对于非 429 错误，或者所有尝试都失败了
+                        if attempt == max_attempts_per_request - 1:
+                            logger.error(f"All attempts failed for this request after non-429 errors or no active keys left.")
                             raise
                         
-                        # 否则，等待一段时间再重试 (指数退避)
-                        base_delay = 10 # 初始等待时间，根据Google API建议调整
-                        await asyncio.sleep(base_delay * (2 ** attempt) + random.uniform(0, 1)) # 2^attempt 秒 + 随机抖动
+                        # 对于非 429 错误，进行短暂的指数退避，避免立即重试相同的非 429 错误
+                        base_delay = 2 # 初始等待时间，可以短一些
+                        await asyncio.sleep(base_delay * (2 ** attempt) + random.uniform(0, 0.5))
                 
-                raise Exception("Failed to generate TLDR after multiple attempts with key pool.") # 理论上不会执行到这里
+                raise Exception("Failed to generate TLDR after multiple attempts with key pool.")
             else:
                 # 单个 API Key 的同步调用 (兼容旧逻辑)
                 max_retries = 3
