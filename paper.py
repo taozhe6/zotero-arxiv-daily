@@ -94,8 +94,8 @@ class PreprintPaper:
             return tldr_content
         except Exception as e:
             logger.error(f"Failed to generate TLDR for {self.doi}: {e}. Falling back to abstract.")
-            self.tldr_content = self.abstract
-            return self.abstract
+            self.tldr_content = tldr_result
+            return tldr_result
         
     @property
     def paper_id(self) -> str:
