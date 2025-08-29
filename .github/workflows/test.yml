@@ -50,6 +50,7 @@ jobs:
           # 新增密钥池参数
           LLM_KEY_POOL_BLACKLIST_THRESHOLD: ${{ vars.LLM_KEY_POOL_BLACKLIST_THRESHOLD }}
           LLM_KEY_POOL_RECOVERY_INTERVAL:   ${{ vars.LLM_KEY_POOL_RECOVERY_INTERVAL }}
+          LLM_KEY_POOL_RPM_LIMIT:           ${{ secrets.LLM_KEY_POOL_RPM_LIMIT }}
           # -------- favorite authors --------
           FAVORITE_AUTHORS: ${{ secrets.FAVORITE_AUTHORS }}
         run: |

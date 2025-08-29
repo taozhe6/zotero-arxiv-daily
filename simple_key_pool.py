@@ -152,7 +152,8 @@ class SimpleKeyPool:
         api_key_obj.is_blacklisted = False
         api_key_obj.failure_count = 0
         api_key_obj.blacklist_time = 0.0 # 重置黑名单时间
-
+        api_key_obj.requests_in_current_minute = 0 # <-- 新增：恢复时重置 RPM 计数
+        api_key_obj.minute_start_time = time.time() # <-- 新增：恢复时重置分钟开始时间
         if key_value in self._blacklisted_keys:
             self._blacklisted_keys.remove(key_value)
         if key_value not in self._active_keys:

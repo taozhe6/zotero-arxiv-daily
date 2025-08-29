@@ -90,7 +90,6 @@ class PreprintPaper:
                 ]
             )
             logger.debug(f"Generated TLDR for {self.doi} in {llm_instance.lang}")
-            self.tldr_content = tldr_result
             return tldr_content
         except Exception as e:
             logger.error(f"Failed to generate TLDR for {self.doi}: {e}. Falling back to abstract.")

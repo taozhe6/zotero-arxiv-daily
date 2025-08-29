@@ -118,9 +118,17 @@ def add_argument(*args, **kwargs):
     if env_val is not None:
         if kwargs.get("type") is bool:
             env_val = env_val.lower() in ["1", "true"]
+        elif kwargs.get("type") is int: # <-- 新增：处理 int 类型
+            try:
+                env_val = int(env_val)
+            except ValueError:
+                logger.warning(f"Environment variable {dest_name.upper()} is not a valid integer. Using default.")
+                env_val = None # 设为 None 让 argparse 使用默认值
         else:
             env_val = kwargs.get("type", str)(env_val)
-        parser.set_defaults(**{dest_name: env_val})
+        
+        if env_val is not None: # 只有当 env_val 有效时才设置默认值
+            parser.set_defaults(**{dest_name: env_val})
 
 
 # Zotero
@@ -227,7 +235,7 @@ async def main_async_flow(): # 将主逻辑封装为异步函数
                 GLOBAL_KEY_POOL = SimpleKeyPool(
                     keys=api_keys,
                     blacklist_threshold=args.llm_key_pool_blacklist_threshold,
-                    recovery_interval_seconds=args.llm_key_pool_recovery_interval
+                    recovery_interval_seconds=args.llm_key_pool_recovery_interval,
                     rpm_limit=args.llm_key_pool_rpm_limit # <-- 传递 RPM 限制
                 )
                 set_global_llm_client(
