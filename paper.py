@@ -89,6 +89,7 @@ class PreprintPaper:
                     {"role": "user", "content": prompt},
                 ]
             )
+            self.tldr_content = tldr_content
             logger.debug(f"Generated TLDR for {self.doi} in {llm_instance.lang}")
             return tldr_content
         except Exception as e:
