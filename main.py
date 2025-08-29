@@ -185,7 +185,7 @@ add_argument(
     help="Semicolon-separated list of favorite author names",
 )
 add_argument("--llm_key_pool_rpm_limit", type=int, default=10, help="LLM key pool RPM limit per key.")
-
+add_argument("--concurrency_limit", type=int, default=2, help="Limit the number of concurrent API requests.")
 # Misc
 parser.add_argument("--debug", action="store_true", help="Verbose logging")
 
@@ -253,9 +253,15 @@ async def main_async_flow(): # 将主逻辑封装为异步函数
                     key_pool=None # 不使用密钥池
                 )
             
-            # 异步并发生成 TLDR
-            tldr_tasks = [paper.get_tldr() for paper in papers]
-            # 使用 tqdm.asyncio 来显示异步任务的进度条
+            # 使用 Semaphore 控制并发
+            semaphore = asyncio.Semaphore(args.concurrency_limit)
+            logger.info(f"Generating TLDRs with concurrency limit: {args.concurrency_limit}")
+            
+            async def get_tldr_with_semaphore(paper: PreprintPaper):
+                async with semaphore:
+                    return await paper.get_tldr()
+            
+            tldr_tasks = [get_tldr_with_semaphore(paper) for paper in papers]
             tldr_results = await async_tqdm.gather(*tldr_tasks, desc="Generating TLDRs concurrently")
             for paper, tldr_text in zip(papers, tldr_results):
                 paper.tldr_content = tldr_text
