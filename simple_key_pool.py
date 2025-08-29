@@ -13,15 +13,17 @@ class APIKey:
         self.is_blacklisted: bool = False
         self.last_used_time: float = 0.0 # 用于记录上次使用时间，辅助轮换
         self.blacklist_time: float = 0.0 # 记录进入黑名单的时间
-
+        self.requests_in_current_minute: int = 0
+        self.minute_start_time: float = time.time() # 当前分钟的开始时间
 class SimpleKeyPool:
-    def __init__(self, keys: List[str], max_retries_per_key=3, blacklist_threshold=3, recovery_interval_seconds=300):
+    def __init__(self, keys: List[str], max_retries_per_key=3, blacklist_threshold=3, recovery_interval_seconds=300, rpm_limit: int = 10):
         """
         初始化简易密钥池。
         :param keys: 初始的 API 密钥列表。
         :param max_retries_per_key: 单个密钥在被列入黑名单前允许的最大失败次数。
         :param blacklist_threshold: 密钥进入黑名单的失败阈值。
         :param recovery_interval_seconds: 黑名单密钥尝试恢复的间隔时间（秒）。
+        :param rpm_limit: 每个 Key 每分钟允许的最大请求数。
         """
         if not keys:
             raise ValueError("Key pool must be initialized with at least one key.")
@@ -33,9 +35,10 @@ class SimpleKeyPool:
         self.max_retries_per_key = max_retries_per_key
         self.blacklist_threshold = blacklist_threshold
         self.recovery_interval_seconds = recovery_interval_seconds
+        self.rpm_limit = rpm_limit
         self._lock = asyncio.Lock() # 用于保护 _active_keys 和 _blacklisted_keys 的并发访问
 
-        logger.info(f"SimpleKeyPool initialized with {len(keys)} keys. Blacklist threshold: {blacklist_threshold}, Recovery interval: {recovery_interval_seconds}s.")
+        logger.info(f"SimpleKeyPool initialized with {len(keys)} keys. Blacklist threshold: {blacklist_threshold}, Recovery interval: {recovery_interval_seconds}s, RPM Limit: {rpm_limit}.")
         
         # 启动一个后台任务来定期恢复黑名单密钥
         self._recovery_task = asyncio.create_task(self._periodic_recovery())
@@ -51,22 +54,57 @@ class SimpleKeyPool:
         """
         原子性地选择并轮换一个可用的 API 密钥。
         如果所有密钥都在黑名单中，则返回 None。
+        此方法现在会等待，直到找到一个未达到速率限制的 Key。
         """
         async with self._lock:
-            if not self._active_keys:
-                logger.warning("No active keys available in the pool.")
-                return None
-            
-            # 简单的轮换策略：从列表中取第一个，然后移到末尾
-            # 也可以实现更复杂的策略，例如基于上次使用时间或随机选择
-            key_value = self._active_keys.pop(0)
-            self._active_keys.append(key_value)
-            
-            api_key_obj = self._keys[key_value]
-            api_key_obj.last_used_time = time.time() # 更新上次使用时间
-            
-            logger.debug(f"Selected key: {key_value[:8]}... (failure count: {api_key_obj.failure_count})")
-            return key_value
+            # 尝试获取一个可用的 Key，直到成功或所有 Key 都被检查过
+            start_time = time.time()
+            while True:
+                if not self._active_keys:
+                    logger.warning("No active keys available in the pool.")
+                    return None
+                
+                # 简单的轮换策略：从列表中取第一个，然后移到末尾
+                key_value = self._active_keys.pop(0)
+                self._active_keys.append(key_value) # 移到末尾，下次再用
+                
+                api_key_obj = self._keys[key_value]
+                current_time = time.time()
+                # 检查并重置每分钟计数器
+                if current_time - api_key_obj.minute_start_time >= 60:
+                    api_key_obj.requests_in_current_minute = 0
+                    api_key_obj.minute_start_time = current_time
+                
+                # 检查是否达到速率限制
+                if api_key_obj.requests_in_current_minute < self.rpm_limit:
+                    api_key_obj.last_used_time = current_time
+                    api_key_obj.requests_in_current_minute += 1
+                    logger.debug(f"Selected key: {key_value[:8]}... (failure count: {api_key_obj.failure_count}, RPM count: {api_key_obj.requests_in_current_minute}/{self.rpm_limit})")
+                    return key_value
+                else:
+                    # 如果当前 Key 达到限制，记录并继续尝试下一个 Key
+                    logger.debug(f"Key {key_value[:8]}... reached RPM limit ({self.rpm_limit}). Trying next key.")
+                    # 如果所有 Key 都达到限制，我们需要等待
+                    # 为了避免死循环，如果所有 Key 都被检查过一遍，就等待一小段时间
+                    # 这里可以优化为等待到最早可以使用的 Key 的时间
+                    if len(self._active_keys) == len(self._keys) - 1: # 检查了一圈，只剩当前这个 Key
+                        # 计算最早可以使用的 Key 还需要等待多久
+                        wait_times = []
+                        for k_val in self._active_keys + [key_value]: # 包含当前 Key
+                            k_obj = self._keys[k_val]
+                            if k_obj.requests_in_current_minute >= self.rpm_limit:
+                                time_to_wait = 60 - (current_time - k_obj.minute_start_time)
+                                if time_to_wait > 0:
+                                    wait_times.append(time_to_wait)
+                        
+                        if wait_times:
+                            min_wait = min(wait_times)
+                            logger.info(f"All active keys reached RPM limit. Waiting for {min_wait:.2f} seconds for a key to become available.")
+                            await asyncio.sleep(min_wait + random.uniform(0, 0.5)) # 加上抖动
+                        else:
+                            # 理论上不应该发生，除非逻辑有误或所有 Key 都被黑名单了
+                            logger.warning("Unexpected: All active keys reached RPM limit but no wait time calculated.")
+                            await asyncio.sleep(1) # 避免死循环
 
     async def update_key_status(self, key_value: str, is_success: bool, error_message: Optional[str] = None):
         """
@@ -131,7 +169,6 @@ class SimpleKeyPool:
             current_time = time.time()
             for key_value in self._blacklisted_keys:
                 api_key_obj = self._keys[key_value]
-                # 简单的恢复策略：达到恢复间隔时间就尝试恢复
                 if current_time - api_key_obj.blacklist_time >= self.recovery_interval_seconds:
                     keys_to_recover.append(key_value)
             
@@ -142,7 +179,6 @@ class SimpleKeyPool:
                 logger.info(f"Attempted to recover {len(keys_to_recover)} blacklisted keys.")
             else:
                 logger.debug("No blacklisted keys to recover at this time.")
-
     async def close(self):
         """关闭密钥池，停止后台任务。"""
         if self._recovery_task:
@@ -152,7 +188,6 @@ class SimpleKeyPool:
             except asyncio.CancelledError:
                 logger.info("Key pool recovery task cancelled.")
         logger.info("SimpleKeyPool closed.")
-
 # 示例用法 (仅用于测试 simple_key_pool.py 自身)
 async def main_key_pool_test():
     keys = [f"sk-key{i}" for i in range(5)]
