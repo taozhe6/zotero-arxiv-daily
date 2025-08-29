@@ -77,7 +77,7 @@ class PreprintPaper:
         prompt_tokens = enc.encode(prompt)
         prompt_tokens = prompt_tokens[:4000]
         prompt = enc.decode(prompt_tokens)
-        
+        tldr_result = self.abstract
         try:
             # 调用异步的 generate_tldr 方法
             tldr_content = await llm_instance.generate_tldr( 
