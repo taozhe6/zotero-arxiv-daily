@@ -176,6 +176,7 @@ add_argument(
     default="",
     help="Semicolon-separated list of favorite author names",
 )
+add_argument("--llm_key_pool_rpm_limit", type=int, default=10, help="LLM key pool RPM limit per key.")
 
 # Misc
 parser.add_argument("--debug", action="store_true", help="Verbose logging")
@@ -227,6 +228,7 @@ async def main_async_flow(): # 将主逻辑封装为异步函数
                     keys=api_keys,
                     blacklist_threshold=args.llm_key_pool_blacklist_threshold,
                     recovery_interval_seconds=args.llm_key_pool_recovery_interval
+                    rpm_limit=args.llm_key_pool_rpm_limit # <-- 传递 RPM 限制
                 )
                 set_global_llm_client(
                     base_url=args.openai_api_base,
