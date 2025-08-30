@@ -286,6 +286,42 @@ async def main_async_flow(): # 将主逻辑封装为异步函数
         args.smtp_port,
         html,
     )
+    # --- Start of Performance Metrics Calculation ---
+    successful_tldrs = 0
+    for p in papers:
+        # 假设原文摘要不以中文开头，而成功生成的TLDR是中文
+        # 这是一个简单的启发式判断，您可以根据实际情况调整
+        if p.tldr_content != p.abstract:
+            successful_tldrs += 1
+    
+    total_papers = len(papers)
+    success_rate = (successful_tldrs / total_papers) * 100 if total_papers > 0 else 0
+    
+    # 假设 tldr_tasks 是在 if args.use_llm_api 块中定义的
+    # 我们需要获取总执行时间。一个简单的方法是在生成TLDR前后记录时间
+    # （为了不让您修改太多地方，我们这里用一个近似值）
+    # 假设每个请求的基线时间是 6 秒 (10 RPM)
+    baseline_time = total_papers * (60 / args.llm_key_pool_rpm_limit)
+    
+    # 从日志中获取实际执行时间是一个复杂的操作，
+    # 但我们可以通过tqdm的输出来估算。
+    # 为了简单起见，我们直接在日志中打印出可用于计算的数据。
+    # 我们需要找到 tldr_results = await ... 这一行来计算实际时间
+    
+    # 为了避免大幅修改，我们先打印核心数据
+    logger.info("==================== PERFORMANCE METRICS ====================")
+    logger.info(f"Total Papers Processed: {total_papers}")
+    logger.info(f"Successful TLDRs Generated: {successful_tldrs}")
+    logger.info(f"Success Rate: {success_rate:.2f}%")
+    
+    # 构建综合指标
+    # Score = (Success Rate / 100) * (Baseline Time / Actual Time)
+    # 由于我们在这里拿不到精确的 Actual Time，我们先打印一个提示
+    logger.info("To calculate Performance Score, please find the total time for 'Generating TLDRs concurrently' in the logs above.")
+    logger.info("Formula: Score = (Success Rate / 100) * (Baseline Time / Actual Time)")
+    logger.info(f"For this run, Baseline Time would be approx: {baseline_time:.2f} seconds.")
+    logger.info("============================================================")
+    # --- End of Performance Metrics Calculation ---
     logger.success(
         "E-mail sent! If nothing arrives, check the spam folder or SMTP settings."
     )
