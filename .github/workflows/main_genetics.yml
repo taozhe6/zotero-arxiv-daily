@@ -61,8 +61,13 @@ jobs:
           OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
           MODEL_NAME:      ${{ secrets.MODEL_NAME }}
           LANGUAGE:        ${{ vars.LANGUAGE }}
-
+          OPENAI_API_KEYS:                  ${{ secrets.OPENAI_API_KEYS }}
+          LLM_KEY_POOL_BLACKLIST_THRESHOLD: ${{ vars.LLM_KEY_POOL_BLACKLIST_THRESHOLD }}
+          LLM_KEY_POOL_RECOVERY_INTERVAL:   ${{ vars.LLM_KEY_POOL_RECOVERY_INTERVAL }}
+          LLM_KEY_POOL_RPM_LIMIT:           ${{ vars.LLM_KEY_POOL_RPM_LIMIT }}
+          CONCURRENCY_LIMIT:                ${{ vars.CONCURRENCY_LIMIT }}
           # -------- favorite authors --------
           FAVORITE_AUTHORS: ${{ secrets.FAVORITE_AUTHORS }}
         run: |
+          echo "Verifying key count: $(echo $OPENAI_API_KEYS | tr -cd ',' | wc -c | xargs -I {} expr {} + 1) keys found."
           uv run main.py
