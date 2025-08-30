@@ -67,13 +67,13 @@ class LLMClient: # 重命名为 LLMClient 以避免与 LLM 模块混淆
                         return response.choices[0].message.content
                     except Exception as e:
                         error_str = str(e)
-                        logger.error(f"API call with key {key_value[:8]}... failed (attempt {attempt + 1}/{max_attempts_per_request}): {error_str}")
+                        logger.error(f"API call with key {key_value[:12]}... failed (attempt {attempt + 1}/{max_attempts_per_request}): {error_str}")
                         await self.key_pool.update_key_status(key_value, False, error_str)
                         
                         # 如果是 429 错误，密钥池已经处理了等待和轮换。
                         # 这里只需要记录，并让循环继续，密钥池会提供下一个 Key 或等待。
                         if "429" in error_str:
-                            logger.warning(f"Rate limit hit with key {key_value[:8]}..., relying on key pool for next attempt.")
+                            logger.warning(f"Rate limit hit with key {key_value[:12]}..., relying on key pool for next attempt.")
                             # 不需要额外的 sleep，因为 get_key() 已经包含了等待逻辑
                             continue 
                         
