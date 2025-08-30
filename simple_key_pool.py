@@ -37,6 +37,8 @@ class SimpleKeyPool:
         self.recovery_interval_seconds = recovery_interval_seconds
         self.rpm_limit = rpm_limit
         self._lock = asyncio.Lock() # 用于保护 _active_keys 和 _blacklisted_keys 的并发访问
+        self.last_request_time: float = 0.0
+        self.request_interval_seconds: float = 60 / self.rpm_limit
 
         logger.info(f"SimpleKeyPool initialized with {len(keys)} keys. Blacklist threshold: {blacklist_threshold}, Recovery interval: {recovery_interval_seconds}s, RPM Limit: {rpm_limit}.")
         
@@ -57,6 +59,14 @@ class SimpleKeyPool:
         此方法现在会等待，直到找到一个未达到速率限制的 Key。
         """
         async with self._lock:
+            # --- Start of RPS Throttling Logic ---
+            current_time = time.time()
+            time_since_last = current_time - self.last_request_time
+            if time_since_last < self.request_interval_seconds:
+                wait_time = self.request_interval_seconds - time_since_last
+                logger.debug(f"RPS Throttler: waiting for {wait_time:.2f} seconds.")
+                await asyncio.sleep(wait_time)
+            # --- End of RPS Throttling Logic ---
             # 尝试获取一个可用的 Key，直到成功或所有 Key 都被检查过
             start_time = time.time()
             while True:
@@ -80,31 +90,9 @@ class SimpleKeyPool:
                     api_key_obj.last_used_time = current_time
                     api_key_obj.requests_in_current_minute += 1
                     logger.debug(f"Selected key: {key_value[:8]}... (failure count: {api_key_obj.failure_count}, RPM count: {api_key_obj.requests_in_current_minute}/{self.rpm_limit})")
+                    self.last_request_time = time.time()
                     return key_value
-                else:
-                    # 如果当前 Key 达到限制，记录并继续尝试下一个 Key
-                    logger.debug(f"Key {key_value[:8]}... reached RPM limit ({self.rpm_limit}). Trying next key.")
-                    # 如果所有 Key 都达到限制，我们需要等待
-                    # 为了避免死循环，如果所有 Key 都被检查过一遍，就等待一小段时间
-                    # 这里可以优化为等待到最早可以使用的 Key 的时间
-                    if len(self._active_keys) == len(self._keys) - 1: # 检查了一圈，只剩当前这个 Key
-                        # 计算最早可以使用的 Key 还需要等待多久
-                        wait_times = []
-                        for k_val in self._active_keys + [key_value]: # 包含当前 Key
-                            k_obj = self._keys[k_val]
-                            if k_obj.requests_in_current_minute >= self.rpm_limit:
-                                time_to_wait = 60 - (current_time - k_obj.minute_start_time)
-                                if time_to_wait > 0:
-                                    wait_times.append(time_to_wait)
-                        
-                        if wait_times:
-                            min_wait = min(wait_times)
-                            logger.info(f"All active keys reached RPM limit. Waiting for {min_wait:.2f} seconds for a key to become available.")
-                            await asyncio.sleep(min_wait + random.uniform(0, 0.5)) # 加上抖动
-                        else:
-                            # 理论上不应该发生，除非逻辑有误或所有 Key 都被黑名单了
-                            logger.warning("Unexpected: All active keys reached RPM limit but no wait time calculated.")
-                            await asyncio.sleep(1) # 避免死循环
+               
 
     async def update_key_status(self, key_value: str, is_success: bool, error_message: Optional[str] = None):
         """
