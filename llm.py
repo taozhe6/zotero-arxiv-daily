@@ -73,9 +73,16 @@ class LLMClient: # 重命名为 LLMClient 以避免与 LLM 模块混淆
                         # 如果是 429 错误，密钥池已经处理了等待和轮换。
                         # 这里只需要记录，并让循环继续，密钥池会提供下一个 Key 或等待。
                         if "429" in error_str:
-                            logger.warning(f"Rate limit hit with key {key_value[:12]}..., relying on key pool for next attempt.")
-                            # 不需要额外的 sleep，因为 get_key() 已经包含了等待逻辑
-                            continue 
+                            logger.warning(f"Rate limit hit with key {key_value[:12]}... Applying exponential backoff before next attempt.")
+                            # 借鉴非429错误的指数退避策略，但使用一个更适合速率限制的基础延迟
+                            # 这里的 'attempt' 变量来自外层的 for 循环
+                            base_delay = 10  # 基础等待时间（秒），可以根据需要调整
+                            # 增加一个随机抖动（jitter）来避免惊群效应
+                            jitter = random.uniform(0, 1)
+                            wait_time = base_delay * (2 ** attempt) + jitter
+                            logger.debug(f"Exponential backoff: waiting for {wait_time:.2f} seconds.")
+                            await asyncio.sleep(wait_time)
+                            continue
                         
                         # 对于非 429 错误，或者所有尝试都失败了
                         if attempt == max_attempts_per_request - 1:
@@ -83,7 +90,7 @@ class LLMClient: # 重命名为 LLMClient 以避免与 LLM 模块混淆
                             raise
                         
                         # 对于非 429 错误，进行短暂的指数退避，避免立即重试相同的非 429 错误
-                        base_delay = 2 # 初始等待时间，可以短一些
+                        base_delay = 10 # 初始等待时间，可以短一些
                         await asyncio.sleep(base_delay * (2 ** attempt) + random.uniform(0, 0.5))
                 
                 raise Exception("Failed to generate TLDR after multiple attempts with key pool.")
