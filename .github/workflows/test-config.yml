@@ -1,0 +1,39 @@
+name: Test Config Verification
+
+on:
+  workflow_dispatch:
+
+jobs:
+  verify-secrets:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify OPENAI_API_KEYS
+        env:
+          API_KEYS: ${{ secrets.OPENAI_API_KEYS }}
+        run: |
+          echo "--- Verifying OPENAI_API_KEYS Secret ---"
+          if [ -z "$API_KEYS" ]; then
+            echo "::error::Secret OPENAI_API_KEYS is empty or not set."
+            exit 1
+          fi
+          
+          # 计算逗号数量，Key的数量 = 逗号数 + 1
+          comma_count=$(echo "$API_KEYS" | tr -cd ',' | wc -c)
+          key_count=$((comma_count + 1))
+          
+          echo "Number of commas found: $comma_count"
+          echo "Calculated number of keys: $key_count"
+          
+          # 简单的格式验证
+          if [[ "$API_KEYS" == *'，'* ]]; then
+            echo "::warning::Chinese comma '，' detected. Please use English comma ','."
+          fi
+          if [[ "$API_KEYS" == *" "* ]]; then
+            echo "::warning::Whitespace detected. Please ensure keys are separated only by a single comma with no spaces."
+          fi
+          
+          echo "--- Verification Complete ---"
