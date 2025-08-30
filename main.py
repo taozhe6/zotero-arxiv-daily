@@ -202,6 +202,7 @@ fav_author_set = _load_favorite_authors(args.favorite_authors)
 
 # =============================  Flow  ================================ #
 async def main_async_flow(): # 将主逻辑封装为异步函数
+    import time as timer # Use a non-conflicting alias
     global GLOBAL_KEY_POOL # 声明使用全局密钥池
     logger.info("Downloading Zotero library …")
     corpus = get_zotero_corpus(args.zotero_id, args.zotero_key)
@@ -254,6 +255,7 @@ async def main_async_flow(): # 将主逻辑封装为异步函数
                 )
             
             # 使用 Semaphore 控制并发
+            tldr_start_time = timer.time()
             semaphore = asyncio.Semaphore(args.concurrency_limit)
             logger.info(f"Generating TLDRs with concurrency limit: {args.concurrency_limit}")
             
@@ -265,6 +267,7 @@ async def main_async_flow(): # 将主逻辑封装为异步函数
             tldr_results = await async_tqdm.gather(*tldr_tasks, desc="Generating TLDRs concurrently")
             for paper, tldr_text in zip(papers, tldr_results):
                 paper.tldr_content = tldr_text
+            tldr_actual_time = timer.time() - tldr_start_time
         else:
             logger.info("Generating TLDR with local LLM …")
             set_global_llm_client(lang=args.language)
@@ -286,42 +289,35 @@ async def main_async_flow(): # 将主逻辑封装为异步函数
         args.smtp_port,
         html,
     )
-    # --- Start of Performance Metrics Calculation ---
-    successful_tldrs = 0
-    for p in papers:
-        # 假设原文摘要不以中文开头，而成功生成的TLDR是中文
-        # 这是一个简单的启发式判断，您可以根据实际情况调整
-        if p.tldr_content != p.abstract:
-            successful_tldrs += 1
-    
-    total_papers = len(papers)
-    success_rate = (successful_tldrs / total_papers) * 100 if total_papers > 0 else 0
-    
-    # 假设 tldr_tasks 是在 if args.use_llm_api 块中定义的
-    # 我们需要获取总执行时间。一个简单的方法是在生成TLDR前后记录时间
-    # （为了不让您修改太多地方，我们这里用一个近似值）
-    # 假设每个请求的基线时间是 6 秒 (10 RPM)
-    baseline_time = total_papers * (60 / args.llm_key_pool_rpm_limit)
-    
-    # 从日志中获取实际执行时间是一个复杂的操作，
-    # 但我们可以通过tqdm的输出来估算。
-    # 为了简单起见，我们直接在日志中打印出可用于计算的数据。
-    # 我们需要找到 tldr_results = await ... 这一行来计算实际时间
-    
-    # 为了避免大幅修改，我们先打印核心数据
-    logger.info("==================== PERFORMANCE METRICS ====================")
-    logger.info(f"Total Papers Processed: {total_papers}")
-    logger.info(f"Successful TLDRs Generated: {successful_tldrs}")
-    logger.info(f"Success Rate: {success_rate:.2f}%")
-    
-    # 构建综合指标
-    # Score = (Success Rate / 100) * (Baseline Time / Actual Time)
-    # 由于我们在这里拿不到精确的 Actual Time，我们先打印一个提示
-    logger.info("To calculate Performance Score, please find the total time for 'Generating TLDRs concurrently' in the logs above.")
-    logger.info("Formula: Score = (Success Rate / 100) * (Baseline Time / Actual Time)")
-    logger.info(f"For this run, Baseline Time would be approx: {baseline_time:.2f} seconds.")
-    logger.info("============================================================")
-    # --- End of Performance Metrics Calculation ---
+    # --- Start of Final Metrics Report ---
+    if args.use_llm_api:
+        total_papers = len(papers)
+        successful_tldrs = 0
+        for p in papers:
+            if p.tldr_content != p.abstract:
+                successful_tldrs += 1
+                
+        task_success_rate = (successful_tldrs / total_papers) * 100 if total_papers > 0 else 0
+        
+        baseline_time = total_papers * (60 / args.llm_key_pool_rpm_limit)
+        performance_ratio = baseline_time / tldr_actual_time if tldr_actual_time > 0 else 0
+        
+        # 计算最终的有效性能分
+        effective_performance_score = 0
+        if task_success_rate == 100:
+            effective_performance_score = performance_ratio
+            
+        logger.info("==================== METRICS REPORT ====================")
+        logger.info(f"Task Success Rate: {task_success_rate:.2f}%")
+        logger.info(f"Concurrency Level: {args.concurrency_limit}")
+        logger.info(f"Target RPM per Key: {args.llm_key_pool_rpm_limit}")
+        logger.info(f"Baseline Time (Theoretical Serial): {baseline_time:.2f}s")
+        logger.info(f"Actual Execution Time: {tldr_actual_time:.2f}s")
+        logger.info(f"Performance Ratio: {performance_ratio:.2f}x")
+        logger.info("----------------------------------------------------------")
+        logger.info(f"EFFECTIVE PERFORMANCE SCORE: {effective_performance_score:.2f}")
+        logger.info("==========================================================")
+    # --- End of Final Metrics Report ---
     logger.success(
         "E-mail sent! If nothing arrives, check the spam folder or SMTP settings."
     )
