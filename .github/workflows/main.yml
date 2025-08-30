@@ -57,4 +57,5 @@ jobs:
           # -------- favorite authors --------
           FAVORITE_AUTHORS: ${{ secrets.FAVORITE_AUTHORS }}
         run: |
+          echo "Number of keys found: $(echo $OPENAI_API_KEYS | tr -cd ',' | wc -c)"
           uv run main.py
