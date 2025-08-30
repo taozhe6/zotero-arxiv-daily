@@ -15,7 +15,6 @@ class APIKey:
         self.blacklist_time: float = 0.0 # 记录进入黑名单的时间
         self.requests_in_current_minute: int = 0
         self.minute_start_time: float = time.time() # 当前分钟的开始时间
-        self.last_used_time: float = 0.0 # 用于独立的RPS控制
 class SimpleKeyPool:
     def __init__(self, keys: List[str], max_retries_per_key=3, blacklist_threshold=3, recovery_interval_seconds=300, rpm_limit: int = 10):
         """
@@ -38,7 +37,7 @@ class SimpleKeyPool:
         self.recovery_interval_seconds = recovery_interval_seconds
         self.rpm_limit = rpm_limit
         self._lock = asyncio.Lock() # 用于保护 _active_keys 和 _blacklisted_keys 的并发访问
-
+        self.request_interval_seconds: float = 60 / self.rpm_limit
         logger.info(f"SimpleKeyPool initialized with {len(keys)} keys. Blacklist threshold: {blacklist_threshold}, Recovery interval: {recovery_interval_seconds}s, RPM Limit: {rpm_limit}.")
         
         # 启动一个后台任务来定期恢复黑名单密钥
@@ -57,58 +56,61 @@ class SimpleKeyPool:
         如果所有密钥都在黑名单中，则返回 None。
         此方法现在会等待，直到找到一个未达到速率限制的 Key。
         """
-        async with self._lock:
-            # 尝试获取一个可用的 Key，直到成功或所有 Key 都被检查过
-            start_time = time.time()
-            while True:
-            # 寻找一个满足所有条件的Key
-            best_key = None
-            earliest_available_time = float('inf')
-
-            # 遍历所有活跃的Key，而不是只看第一个
-            for key_value in self._active_keys:
-                api_key_obj = self._keys[key_value]
-                current_time = time.time()
-
-                # 检查并重置分钟计数器
-                if current_time - api_key_obj.minute_start_time >= 60:
-                    api_key_obj.requests_in_current_minute = 0
-                    api_key_obj.minute_start_time = current_time
-
-                # 检查RPM和RPS限制
-                is_rpm_ok = api_key_obj.requests_in_current_minute < self.rpm_limit
-                time_since_last_use = current_time - api_key_obj.last_used_time
-                is_rps_ok = time_since_last_use >= self.request_interval_seconds
-
-                if is_rpm_ok and is_rps_ok:
-                    best_key = key_value
-                    break  # 找到一个完全可用的Key，立即跳出循环
-                
-                # 如果Key不可用，计算它最早何时可用，用于后续可能的等待
-                if not is_rps_ok:
-                    key_available_time = api_key_obj.last_used_time + self.request_interval_seconds
-                    earliest_available_time = min(earliest_available_time, key_available_time)
-
-            if best_key:
-                # 找到了一个立即可用的Key
-                api_key_obj = self._keys[best_key]
-                api_key_obj.requests_in_current_minute += 1
-                api_key_obj.last_used_time = time.time()
-                
-                # 为了轮换，将被选中的Key移到队列末尾
-                self._active_keys.remove(best_key)
-                self._active_keys.append(best_key)
-
-                logger.debug(f"Selected key: {best_key[:8]}... (RPM count: {api_key_obj.requests_in_current_minute}/{self.rpm_limit})")
-                return best_key
-            
-            # 如果没有立即可用的Key，说明所有Key都在RPS冷却中
-            wait_time = earliest_available_time - time.time()
-            if wait_time > 0:
-                logger.debug(f"All active keys are in RPS cooldown. Waiting for {wait_time:.2f} seconds.")
-                await asyncio.sleep(wait_time)
-            # 等待后，重新开始下一次while循环查找
-        # --- End of Intelligent Key Selection Logic ---
+            async with self._lock:
+                while True:
+                    # 寻找一个满足所有条件的Key
+                    best_key = None
+                    earliest_available_time = float('inf')
+                    current_time = time.time()
+        
+                    if not self._active_keys:
+                        logger.warning("No active keys available in the pool. Waiting for recovery.")
+                        # 如果没有活跃key，等待一个请求间隔的时间再试，避免死循环
+                        await asyncio.sleep(self.request_interval_seconds)
+                        continue # 重新开始while循环
+        
+                    # 遍历所有活跃的Key，而不是只看第一个
+                    for key_value in self._active_keys:
+                        api_key_obj = self._keys[key_value]
+                        
+                        # 检查并重置分钟计数器
+                        if current_time - api_key_obj.minute_start_time >= 60:
+                            api_key_obj.requests_in_current_minute = 0
+                            api_key_obj.minute_start_time = current_time
+        
+                        # 检查RPM和RPS限制
+                        is_rpm_ok = api_key_obj.requests_in_current_minute < self.rpm_limit
+                        time_since_last_use = current_time - api_key_obj.last_used_time
+                        is_rps_ok = time_since_last_use >= self.request_interval_seconds
+        
+                        if is_rpm_ok and is_rps_ok:
+                            best_key = key_value
+                            break  # 找到一个完全可用的Key，立即跳出for循环
+                        
+                        # 如果Key不可用，计算它最早何时可用，用于后续可能的等待
+                        if not is_rps_ok:
+                            key_available_time = api_key_obj.last_used_time + self.request_interval_seconds
+                            earliest_available_time = min(earliest_available_time, key_available_time)
+        
+                    if best_key:
+                        # 找到了一个立即可用的Key
+                        api_key_obj = self._keys[best_key]
+                        api_key_obj.requests_in_current_minute += 1
+                        api_key_obj.last_used_time = time.time()
+                        
+                        # 为了轮换，将被选中的Key移到队列末尾
+                        self._active_keys.remove(best_key)
+                        self._active_keys.append(best_key)
+        
+                        logger.debug(f"Selected key: {best_key[:8]}... (RPM count: {api_key_obj.requests_in_current_minute}/{self.rpm_limit})")
+                        return best_key
+                    
+                    # 如果没有立即可用的Key，说明所有Key都在RPS冷却中或RPM已满
+                    wait_time = earliest_available_time - time.time()
+                    if wait_time > 0:
+                        logger.debug(f"All active keys are in cooldown. Waiting for {wait_time:.2f} seconds.")
+                        await asyncio.sleep(wait_time)
+                    # 等待后，重新开始下一次while循环查找
                
 
     async def update_key_status(self, key_value: str, is_success: bool, error_message: Optional[str] = None):
