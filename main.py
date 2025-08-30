@@ -10,9 +10,9 @@ import os
 import sys
 from tempfile import mkstemp
 from typing import List, Set
-
+import asyncio # 新增导入 asyncio
 from dotenv import load_dotenv
-
+from simple_key_pool import SimpleKeyPool
 load_dotenv(override=True)
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -21,11 +21,11 @@ from loguru import logger
 from pyzotero import zotero
 from recommender import rerank_paper
 from construct_email import render_email, send_email
-from tqdm import tqdm
+from tqdm.asyncio import tqdm as async_tqdm
 
 from fav_utils import mark_paper
 from paper import PreprintPaper, fetch_today_papers
-from llm import set_global_llm
+from llm import set_global_llm_client, close_global_key_pool, GLOBAL_KEY_POOL
 
 # =============================  Zotero  ============================== #
 def get_zotero_corpus(user_id: str, api_key: str) -> list[dict]:
@@ -118,9 +118,17 @@ def add_argument(*args, **kwargs):
     if env_val is not None:
         if kwargs.get("type") is bool:
             env_val = env_val.lower() in ["1", "true"]
+        elif kwargs.get("type") is int: # <-- 新增：处理 int 类型
+            try:
+                env_val = int(env_val)
+            except ValueError:
+                logger.warning(f"Environment variable {dest_name.upper()} is not a valid integer. Using default.")
+                env_val = None # 设为 None 让 argparse 使用默认值
         else:
             env_val = kwargs.get("type", str)(env_val)
-        parser.set_defaults(**{dest_name: env_val})
+        
+        if env_val is not None: # 只有当 env_val 有效时才设置默认值
+            parser.set_defaults(**{dest_name: env_val})
 
 
 # Zotero
@@ -156,7 +164,8 @@ add_argument(
     default=False,
     help="Use a cloud LLM (OpenAI-compatible API) for TLDR generation",
 )
-add_argument("--openai_api_key", type=str, default=None, help="OpenAI API Key")
+# 修改为支持多个 API Key，通过环境变量传入
+add_argument("--openai_api_keys", type=str, default=None, help="Comma-separated OpenAI API Keys (e.g., sk-key1,sk-key2)")
 add_argument(
     "--openai_api_base",
     type=str,
@@ -165,7 +174,9 @@ add_argument(
 )
 add_argument("--model_name", type=str, default="gpt-4o", help="Model name")
 add_argument("--language", type=str, default="English", help="TLDR language")
-
+# 新增密钥池相关参数
+add_argument("--llm_key_pool_blacklist_threshold", type=int, default=3, help="LLM key pool blacklist threshold")
+add_argument("--llm_key_pool_recovery_interval", type=int, default=300, help="LLM key pool recovery interval in seconds")
 # Favorite authors
 add_argument(
     "--favorite_authors",
@@ -173,7 +184,8 @@ add_argument(
     default="",
     help="Semicolon-separated list of favorite author names",
 )
-
+add_argument("--llm_key_pool_rpm_limit", type=int, default=10, help="LLM key pool RPM limit per key.")
+add_argument("--concurrency_limit", type=int, default=2, help="Limit the number of concurrent API requests.")
 # Misc
 parser.add_argument("--debug", action="store_true", help="Verbose logging")
 
@@ -183,64 +195,134 @@ logger.debug(f"Parsed language argument: {args.language}")
 logger.remove()
 logger.add(sys.stdout, level="DEBUG" if args.debug else "INFO")
 
-if args.use_llm_api and args.openai_api_key is None:
-    parser.error("--use_llm_api requires --openai_api_key")
+if args.use_llm_api and args.openai_api_keys is None:
+    parser.error("--use_llm_api requires --openai_api_keys (comma-separated)")
 
 fav_author_set = _load_favorite_authors(args.favorite_authors)
 
 # =============================  Flow  ================================ #
-logger.info("Downloading Zotero library …")
-corpus = get_zotero_corpus(args.zotero_id, args.zotero_key)
-logger.info(f"{len(corpus)} items found")
-
-if args.zotero_ignore:
-    logger.info("Applying ignore rules …")
-    corpus = filter_corpus(corpus, args.zotero_ignore)
-    logger.info(f"{len(corpus)} items remain after filtering")
-
-logger.info("Fetching new preprints …")
-papers = get_preprints(args.debug)
-
-if len(papers) == 0:
-    logger.info("No new preprints found")
-    if not args.send_empty:
-        sys.exit(0)
-else:
-    logger.info("Computing similarity scores and re-ranking …")
-    papers = rerank_paper(papers, corpus)
-
-    # Mark favorites and resort BEFORE applying max_paper_num
-    papers = mark_and_sort(papers, fav_author_set)
-
-    if args.max_paper_num != -1:
-        papers = papers[: args.max_paper_num]
-
-    # Configure the global LLM
-    if args.use_llm_api:
-        logger.info("Generating TLDR with cloud LLM …")
-        set_global_llm(
-            api_key=args.openai_api_key,
-            base_url=args.openai_api_base,
-            model=args.model_name,
-            lang=args.language,
-        )
+async def main_async_flow(): # 将主逻辑封装为异步函数
+    import time as timer # Use a non-conflicting alias
+    global GLOBAL_KEY_POOL # 声明使用全局密钥池
+    logger.info("Downloading Zotero library …")
+    corpus = get_zotero_corpus(args.zotero_id, args.zotero_key)
+    logger.info(f"{len(corpus)} items found")
+    if args.zotero_ignore:
+        logger.info("Applying ignore rules …")
+        corpus = filter_corpus(corpus, args.zotero_ignore)
+        logger.info(f"{len(corpus)} items remain after filtering")
+    logger.info("Fetching new preprints …")
+    papers = get_preprints(args.debug)
+    if len(papers) == 0:
+        logger.info("No new preprints found")
+        if not args.send_empty:
+            sys.exit(0)
     else:
-        logger.info("Generating TLDR with local LLM …")
-        set_global_llm(lang=args.language)
-    
-# =======================  Build and send e-mail  ====================== #
-logger.info("Rendering e-mail …")
-html = render_email(papers)
-
-logger.info("Sending e-mail …")
-send_email(
-    args.sender,
-    args.receiver,
-    args.sender_password,
-    args.smtp_server,
-    args.smtp_port,
-    html,
-)
-logger.success(
-    "E-mail sent! If nothing arrives, check the spam folder or SMTP settings."
-)
+        logger.info("Computing similarity scores and re-ranking …")
+        # 恢复 rerank_paper 为同步调用，移除 ThreadPoolExecutor
+        # 如果你之前已经修改了 rerank_paper 为同步，这里无需额外修改
+        # 如果没有，请参考我之前给出的“方案一：测试禁用并发”的代码
+        papers = rerank_paper(papers, corpus) 
+        # Mark favorites and resort BEFORE applying max_paper_num
+        papers = mark_and_sort(papers, fav_author_set)
+        if args.max_paper_num != -1:
+            papers = papers[: args.max_paper_num]
+        # 配置全局 LLM 客户端和密钥池
+        if args.use_llm_api:
+            logger.info("Generating TLDR with cloud LLM …")
+            # 初始化密钥池
+            api_keys = [k.strip() for k in args.openai_api_keys.split(',') if k.strip()]
+            if len(api_keys) > 1: # 如果有多个密钥，则使用密钥池
+                GLOBAL_KEY_POOL = SimpleKeyPool(
+                    keys=api_keys,
+                    blacklist_threshold=args.llm_key_pool_blacklist_threshold,
+                    recovery_interval_seconds=args.llm_key_pool_recovery_interval,
+                    rpm_limit=args.llm_key_pool_rpm_limit # <-- 传递 RPM 限制
+                )
+                set_global_llm_client(
+                    base_url=args.openai_api_base,
+                    model=args.model_name,
+                    lang=args.language,
+                    key_pool=GLOBAL_KEY_POOL # 将密钥池实例传递给 LLM 客户端
+                )
+            else: # 只有一个密钥，兼容旧逻辑，不使用密钥池
+                set_global_llm_client(
+                    api_key=api_keys[0],
+                    base_url=args.openai_api_base,
+                    model=args.model_name,
+                    lang=args.language,
+                    key_pool=None # 不使用密钥池
+                )
+            
+            # 使用 Semaphore 控制并发
+            tldr_start_time = timer.time()
+            semaphore = asyncio.Semaphore(args.concurrency_limit)
+            logger.info(f"Generating TLDRs with concurrency limit: {args.concurrency_limit}")
+            
+            async def get_tldr_with_semaphore(paper: PreprintPaper):
+                async with semaphore:
+                    return await paper.get_tldr()
+            
+            tldr_tasks = [get_tldr_with_semaphore(paper) for paper in papers]
+            tldr_results = await async_tqdm.gather(*tldr_tasks, desc="Generating TLDRs concurrently")
+            for paper, tldr_text in zip(papers, tldr_results):
+                paper.tldr_content = tldr_text
+            tldr_actual_time = timer.time() - tldr_start_time
+        else:
+            logger.info("Generating TLDR with local LLM …")
+            set_global_llm_client(lang=args.language)
+            # 如果是本地 LLM，虽然 get_tldr 是 async 方法，但内部是同步调用
+            # 仍然可以并发执行，但不会有 I/O 并行优势
+            tldr_tasks = [paper.get_tldr() for paper in papers]
+            tldr_results = await async_tqdm.gather(*tldr_tasks, desc="Generating TLDRs with local LLM")
+            for paper, tldr_text in zip(papers, tldr_results):
+                paper.tldr_content = tldr_text
+    # =======================  Build and send e-mail  ====================== #
+    logger.info("Rendering e-mail …")
+    html = render_email(papers)
+    logger.info("Sending e-mail …")
+    send_email(
+        args.sender,
+        args.receiver,
+        args.sender_password,
+        args.smtp_server,
+        args.smtp_port,
+        html,
+    )
+    # --- Start of Final Metrics Report ---
+    if args.use_llm_api:
+        total_papers = len(papers)
+        successful_tldrs = 0
+        for p in papers:
+            if p.tldr_content != p.abstract:
+                successful_tldrs += 1
+                
+        task_success_rate = (successful_tldrs / total_papers) * 100 if total_papers > 0 else 0
+        
+        baseline_time = total_papers * (60 / args.llm_key_pool_rpm_limit)
+        performance_ratio = baseline_time / tldr_actual_time if tldr_actual_time > 0 else 0
+        
+        # 计算最终的有效性能分
+        effective_performance_score = 0
+        if task_success_rate == 100:
+            effective_performance_score = performance_ratio
+            
+        logger.info("==================== METRICS REPORT ====================")
+        logger.info(f"Task Success Rate: {task_success_rate:.2f}%")
+        logger.info(f"Concurrency Level: {args.concurrency_limit}")
+        logger.info(f"Target RPM per Key: {args.llm_key_pool_rpm_limit}")
+        logger.info(f"Baseline Time (Theoretical Serial): {baseline_time:.2f}s")
+        logger.info(f"Actual Execution Time: {tldr_actual_time:.2f}s")
+        logger.info(f"Performance Ratio: {performance_ratio:.2f}x")
+        logger.info("----------------------------------------------------------")
+        logger.info(f"EFFECTIVE PERFORMANCE SCORE: {effective_performance_score:.2f}")
+        logger.info("==========================================================")
+    # --- End of Final Metrics Report ---
+    logger.success(
+        "E-mail sent! If nothing arrives, check the spam folder or SMTP settings."
+    )
+    # 关闭全局密钥池（如果存在）
+    await close_global_key_pool()
+if __name__ == "__main__":
+    # 运行异步主函数
+    asyncio.run(main_async_flow())

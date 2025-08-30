@@ -151,7 +151,7 @@ def _paper_block(p: PreprintPaper) -> str:
       </tr>
       <tr>
         <td style="font-size:14px;color:#333;padding:8px 0;">
-          <strong>TLDR:</strong> {getattr(p, "tldr", p.summary)}
+          <strong>TLDR:</strong> {p.tldr_content}
         </td>
       </tr>
       <tr>
