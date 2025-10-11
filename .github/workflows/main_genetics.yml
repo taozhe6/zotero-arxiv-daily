@@ -2,8 +2,8 @@ name: Send BioRxiv/MedRxiv (genetics) Emails Daily
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 23 * * *'
+  #schedule:
+    #- cron: '0 23 * * *'
 
 jobs:
   calculate-and-send:
